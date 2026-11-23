@@ -20,7 +20,7 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="max-w-3xl text-sm text-stone-600">
+        <p className="max-w-3xl text-sm text-muted-foreground">
           RAB disusun per divisi pekerjaan (format standar Indonesia). Semua harga satuan bisa langsung diubah pada kolom{" "}
           <span className="font-medium">Harga satuan</span> — kuantitas bata, adukan, struktur, dan atap dihitung ulang
           otomatis dari model 3D.
@@ -30,9 +30,9 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-stone-200">
+      <div className="overflow-x-auto rounded-md border border-border">
         <table className="w-full min-w-[820px] text-sm">
-          <thead className="bg-stone-100 text-left text-xs uppercase tracking-wide text-stone-500">
+          <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-medium">Uraian pekerjaan / material</th>
               <th className="px-3 py-2 font-medium">Qty</th>
@@ -40,7 +40,7 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
               <th className="px-3 py-2 text-right font-medium">Jumlah</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-stone-100">
+          <tbody className="divide-y divide-border">
             {rab.divisions.map((d) => (
               <DivisionBlock key={d.id} divisi={d} onPriceChange={onPriceChange} />
             ))}
@@ -49,44 +49,44 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-md border border-stone-200 bg-white p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-stone-800">
-            <Wallet className="h-4 w-4 text-amber-700" aria-hidden /> Upah tukang (borongan)
+        <div className="rounded-md border border-border bg-card p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Wallet className="h-4 w-4 text-amber-400" aria-hidden /> Upah tukang (borongan)
           </div>
           <Slider value={[rab.upahPct]} min={0} max={50} step={1} onValueChange={(v) => onUpahChange(v[0])} />
           <div className="mt-2 flex items-center justify-between text-sm">
-            <span className="text-stone-500">{rab.upahPct}% dari material</span>
-            <span className="font-semibold tabular-nums text-stone-800">{fmtRp(rab.upah)}</span>
+            <span className="text-muted-foreground">{rab.upahPct}% dari material</span>
+            <span className="font-semibold tabular-nums text-foreground">{fmtRp(rab.upah)}</span>
           </div>
-          <p className="mt-2 text-xs leading-relaxed text-stone-500">
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
             Borongan pasang di Indonesia umumnya 20-30% dari nilai material, tergantung daerah dan tingkat kesulitan.
           </p>
         </div>
 
-        <div className="rounded-md border border-amber-200 bg-amber-50/60 p-4">
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
           <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between text-stone-600">
+            <div className="flex justify-between text-muted-foreground">
               <span>Subtotal material</span>
               <span className="tabular-nums font-medium">{fmtRp(rab.materialTotal)}</span>
             </div>
-            <div className="flex justify-between text-stone-600">
+            <div className="flex justify-between text-muted-foreground">
               <span>Upah tukang</span>
               <span className="tabular-nums font-medium">{fmtRp(rab.upah)}</span>
             </div>
-            <Separator className="my-2 bg-amber-200" />
-            <div className="flex justify-between text-base font-bold text-stone-900">
+            <Separator className="my-2 bg-amber-500/30" />
+            <div className="flex justify-between text-base font-bold text-foreground">
               <span>Total estimasi RAB</span>
               <span className="tabular-nums">{fmtRp(rab.total)}</span>
             </div>
-            <div className="flex justify-between text-xs text-stone-500">
+            <div className="flex justify-between text-xs text-muted-foreground">
               <span>Per m2 tanah (36 m2)</span>
               <span className="tabular-nums">{fmtRp(rab.perM2Gross)}</span>
             </div>
-            <div className="flex justify-between text-xs text-stone-500">
+            <div className="flex justify-between text-xs text-muted-foreground">
               <span>Per m2 luas bersih</span>
               <span className="tabular-nums">{fmtRp(rab.perM2Net)}</span>
             </div>
-            <p className="pt-1 text-[11px] leading-relaxed text-stone-500">
+            <p className="pt-1 text-[11px] leading-relaxed text-muted-foreground">
               Patokan umum biaya bangun rumah sederhana 2025: Rp2,0-3,5 juta per m2. Simpan cadangan 5-10% dari total untuk kenaikan harga.
             </p>
           </div>
@@ -105,38 +105,38 @@ function DivisionBlock({
 }) {
   return (
     <>
-      <tr className="bg-stone-200/70">
+      <tr className="bg-muted/70">
         <td colSpan={4} className="px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-sm bg-stone-700 px-1 text-[10px] font-bold text-white">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-sm bg-foreground px-1 text-[10px] font-bold text-background">
                 {divisi.kode}
               </span>
-              <span className="text-xs font-bold uppercase tracking-wide text-stone-700">{divisi.nama}</span>
+              <span className="text-xs font-bold uppercase tracking-wide text-foreground/90">{divisi.nama}</span>
             </div>
-            <span className="text-xs font-semibold tabular-nums text-stone-600">Subtotal: {fmtRp(divisi.subtotal)}</span>
+            <span className="text-xs font-semibold tabular-nums text-muted-foreground">Subtotal: {fmtRp(divisi.subtotal)}</span>
           </div>
         </td>
       </tr>
       {divisi.rows.map((r) => (
-        <tr key={r.id + r.priceKey} className="bg-white align-top">
+        <tr key={r.id + r.priceKey} className="bg-card align-top">
           <td className="px-3 py-2.5">
-            <div className="font-medium text-stone-800">{r.uraian}</div>
+            <div className="font-medium text-foreground">{r.uraian}</div>
             <div className="mt-0.5 flex items-center gap-2">
-              <span className="text-xs text-stone-500">{r.spek}</span>
+              <span className="text-xs text-muted-foreground">{r.spek}</span>
               {r.exact ? (
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-700">
+                <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[10px] font-medium text-emerald-400">
                   dari model 3D
                 </Badge>
               ) : (
-                <Badge variant="outline" className="border-stone-200 bg-stone-50 px-1.5 text-[10px] font-medium text-stone-500">
+                <Badge variant="outline" className="border-border bg-muted/40 px-1.5 text-[10px] font-medium text-muted-foreground">
                   estimasi
                 </Badge>
               )}
             </div>
           </td>
-          <td className="px-3 py-2.5 whitespace-nowrap text-stone-600">
-            {fmtNum(r.qty, r.qty % 1 === 0 ? 0 : 2)} <span className="text-xs text-stone-400">{r.unit}</span>
+          <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">
+            {fmtNum(r.qty, r.qty % 1 === 0 ? 0 : 2)} <span className="text-xs text-muted-foreground">{r.unit}</span>
           </td>
           <td className="px-3 py-1.5">
             <Input
@@ -149,7 +149,7 @@ function DivisionBlock({
               onChange={(e) => onPriceChange(r.priceKey, Math.max(0, Number(e.target.value)))}
             />
           </td>
-          <td className="px-3 py-2.5 text-right font-medium tabular-nums text-stone-800">{fmtRp(r.subtotal)}</td>
+          <td className="px-3 py-2.5 text-right font-medium tabular-nums text-foreground">{fmtRp(r.subtotal)}</td>
         </tr>
       ))}
     </>

@@ -17,6 +17,7 @@ export interface ViewState {
   showRoof: boolean; // genteng + nok
   showRangka: boolean; // kuda-kuda + reng (rangka baja ringan)
   showStruktur: boolean; // sloof + kolom praktis + ring balk
+  showDinding: boolean; // pasangan bata + plester terlihat (mode bebas)
   showLabels: boolean;
   showFinishing: boolean; // plester + cat di mode bebas (stage 0)
   explode: number; // 0..1
@@ -42,7 +43,7 @@ interface StageVis {
   cat: boolean;
 }
 
-type CameraPreset = "3d" | "depan" | "atas";
+type CameraPreset = "3d" | "depan" | "belakang" | "samping" | "atas";
 
 const GROUND_Y = -0.55;
 
@@ -61,6 +62,23 @@ export class HouseScene {
   private clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
   private ro: ResizeObserver;
+
+  // --- studio editor (tema gelap ala Blender): proyeksi, lingkungan, dimensi ---
+  private cameraOrtho: THREE.OrthographicCamera = new THREE.OrthographicCamera(-6, 6, 6, -6, 0.1, 300);
+  private useOrtho = false;
+  private gridHelper!: THREE.GridHelper;
+  private groundMesh!: THREE.Mesh;
+  private dimsGroup: THREE.Group = new THREE.Group();
+  private dimsOn = false;
+  private lastModel: HouseModel | null = null;
+  private envVisible = { grid: true, ground: true, plot: true };
+  private buildingMats: THREE.MeshStandardMaterial[] = [];
+  private matDim: THREE.LineBasicMaterial = new THREE.LineBasicMaterial({
+    color: 0xdadfe4,
+    transparent: true,
+    opacity: 0.95,
+    depthTest: false,
+  });
 
   // orbit state
   private target = new THREE.Vector3(3, 1.2, 3);
@@ -97,8 +115,8 @@ export class HouseScene {
   private matVent = new THREE.MeshStandardMaterial({ color: 0x393933, roughness: 0.9 });
   private matVentFrame = new THREE.MeshStandardMaterial({ color: 0xc9c3b6, roughness: 0.9 });
   private matPintuGelap = new THREE.MeshStandardMaterial({ color: 0x5b3a1c, roughness: 0.6 });
-  private matGround = new THREE.MeshStandardMaterial({ color: 0xb9c3ab, roughness: 1, transparent: true, opacity: 1 });
-  private matPlot = new THREE.MeshStandardMaterial({ color: 0x9db084, roughness: 1, transparent: true, opacity: 1 });
+  private matGround = new THREE.MeshStandardMaterial({ color: 0x5a634e, roughness: 1, transparent: true, opacity: 1 });
+  private matPlot = new THREE.MeshStandardMaterial({ color: 0x77855d, roughness: 1, transparent: true, opacity: 1 });
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -107,7 +125,7 @@ export class HouseScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.localClippingEnabled = true;
-    this.renderer.setClearColor(0xe3e8e2);
+    this.renderer.setClearColor(0x232629);
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
@@ -119,6 +137,7 @@ export class HouseScene {
       this.matPlester, this.matCatInt, this.matCatExt, this.matVent,
       this.matVentFrame, this.matPintuGelap,
     ];
+    this.buildingMats = mats;
     for (const m of mats) m.clippingPlanes = [this.clipPlane];
 
     // pencahayaan (dikalibrasi agar warna cat tidak terpotong putih)
@@ -146,12 +165,14 @@ export class HouseScene {
     ground.position.y = GROUND_Y;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.groundMesh = ground;
 
-    const grid = new THREE.GridHelper(60, 60, 0xc3c9bd, 0xd0d5ca);
+    const grid = new THREE.GridHelper(60, 60, 0x3f4347, 0x333739);
     (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.55;
+    (grid.material as THREE.Material).opacity = 0.4;
     grid.position.y = GROUND_Y + 0.002;
     this.scene.add(grid);
+    this.gridHelper = grid;
 
     const plotGeo = new THREE.PlaneGeometry(6, 6);
     this.disposables.push(plotGeo);
@@ -179,6 +200,7 @@ export class HouseScene {
     this.roofGroup.add(this.tilesGroup);
     this.roofGroup.add(this.trussGroup);
     this.scene.add(this.labelGroup);
+    this.scene.add(this.dimsGroup);
 
     this.initOrbit();
     this.ro = new ResizeObserver(() => this.resize());
@@ -255,6 +277,12 @@ export class HouseScene {
     if (p === "depan") {
       this.target.set(3, 2.0, 3);
       this.sph = { radius: 12.5, theta: 0, phi: 1.3 };
+    } else if (p === "belakang") {
+      this.target.set(3, 2.0, 3);
+      this.sph = { radius: 12.5, theta: Math.PI, phi: 1.3 };
+    } else if (p === "samping") {
+      this.target.set(3, 2.0, 3);
+      this.sph = { radius: 12.5, theta: Math.PI / 2, phi: 1.3 };
     } else if (p === "atas") {
       this.target.set(3, 0, 3);
       this.sph = { radius: 13.5, theta: Math.PI * 0.001, phi: 0.03 };
@@ -262,6 +290,31 @@ export class HouseScene {
       this.target.set(3, 1.4, 3);
       this.sph = { radius: 13, theta: Math.PI * 0.15, phi: 1.02 };
     }
+  }
+
+  /** Proyeksi ortografis (gambar teknik) atau perspektif (eksplorasi bebas). */
+  setProjection(ortho: boolean) {
+    this.useOrtho = ortho;
+    this.syncOrtho();
+  }
+
+  /** Toggle lingkungan studio: grid lantai, bidang tanah, petak 6x6. */
+  setEnvironment(opts: Partial<{ grid: boolean; ground: boolean; plot: boolean }>) {
+    Object.assign(this.envVisible, opts);
+    this.gridHelper.visible = this.envVisible.grid;
+    this.groundMesh.visible = this.envVisible.ground;
+    if (this.plotMesh) this.plotMesh.visible = this.envVisible.plot;
+  }
+
+  /** Mode shading: solid (standar) atau wireframe arsitektur. */
+  setWireframe(on: boolean) {
+    for (const m of this.buildingMats) m.wireframe = on;
+  }
+
+  /** Anotasi dimensi 3D (lebar-kedalaman-tinggi + level lantai/dinding/nok). */
+  setDims(on: boolean) {
+    this.dimsOn = on;
+    this.rebuildDims();
   }
 
   private camPos(): THREE.Vector3 {
@@ -275,10 +328,26 @@ export class HouseScene {
 
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
-    this.camera.position.copy(this.camPos());
-    this.camera.lookAt(this.target);
-    this.renderer.render(this.scene, this.camera);
+    const cam: THREE.PerspectiveCamera | THREE.OrthographicCamera = this.useOrtho ? this.cameraOrtho : this.camera;
+    cam.position.copy(this.camPos());
+    cam.lookAt(this.target);
+    if (this.useOrtho) this.syncOrtho();
+    this.renderer.render(this.scene, cam);
   };
+
+  private syncOrtho() {
+    const el = this.canvas.parentElement ?? this.canvas;
+    const w = Math.max(1, el.clientWidth);
+    const h = Math.max(1, el.clientHeight);
+    const halfH = this.sph.radius * Math.tan((this.camera.fov * Math.PI) / 360);
+    const halfW = halfH * (w / h);
+    const o = this.cameraOrtho;
+    o.left = -halfW;
+    o.right = halfW;
+    o.top = halfH;
+    o.bottom = -halfH;
+    o.updateProjectionMatrix();
+  }
 
   private resize() {
     const el = this.canvas.parentElement ?? this.canvas;
@@ -287,11 +356,13 @@ export class HouseScene {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.syncOrtho();
   }
 
   // --------------------------------------------------------------- update --
 
   update(model: HouseModel, view: ViewState) {
+    this.lastModel = model;
     // bersihkan rumah lama (grup persisten dilepas, lalu dipasang kembali)
     this.clearGroup(this.houseRoot);
     this.houseRoot.add(this.kolomGroup);
@@ -317,7 +388,9 @@ export class HouseScene {
     // agar profil pondasi (batu kali / buis cakar ayam) di bawah muka tanah terbaca
     this.matGround.transparent = semi;
     this.matGround.opacity = semi ? 0.45 : 1;
-    if (this.plotMesh) this.plotMesh.visible = !semi;
+    if (this.plotMesh) this.plotMesh.visible = this.envVisible.plot && !semi;
+    this.groundMesh.visible = this.envVisible.ground;
+    this.gridHelper.visible = this.envVisible.grid;
 
     const tL = model.config.tLuar / 1000;
     const tinggi = model.config.tinggi;
@@ -330,10 +403,10 @@ export class HouseScene {
       pondasi: manual ? true : s >= 1,
       sloof: manual ? view.showStruktur : s >= 2,
       kolom: manual ? view.showStruktur : s >= 2,
-      dinding: manual ? true : s >= 3,
-      pelana: manual ? true : s >= 4,
+      dinding: manual ? view.showDinding : s >= 3,
+      pelana: manual ? view.showDinding : s >= 4,
       ringbalk: manual ? view.showStruktur : s >= 4,
-      kusen: manual ? true : s >= 3,
+      kusen: manual ? view.showDinding || view.showStruktur : s >= 3,
       lantai: manual ? true : s >= 8,
       rangka: manual ? view.showRangka : s >= 5,
       genteng: manual ? view.showRoof : s >= 6,
@@ -394,6 +467,9 @@ export class HouseScene {
     this.tilesGroup.visible = V.genteng;
     this.trussGroup.visible = V.rangka;
     this.kolomGroup.visible = V.kolom;
+
+    // anotasi dimensi 3D mengikuti model terakhir
+    this.rebuildDims();
   }
 
   private buildWall(w: WallRT, model: HouseModel, V: StageVis, cakar: boolean) {
@@ -751,6 +827,95 @@ export class HouseScene {
     }
   }
 
+  // ---------------------------------------------------------- dimensi 3D --
+
+  private rebuildDims() {
+    this.clearGroup(this.dimsGroup);
+    const m = this.lastModel;
+    if (!this.dimsOn || !m) return;
+    const f2 = (v: number) => v.toFixed(2).replace(".", ",");
+    const t = m.config.tinggi;
+    const rbTop = t + RB_H;
+    const yR = m.roof.yRidge;
+    const y = GROUND_Y + 0.03;
+
+    // dimensi lebar & kedalaman di sisi depan-kanan (menghadap kamera 3/4 default)
+    this.dimLine(new THREE.Vector3(0, y, 7.3), new THREE.Vector3(6, y, 7.3), "6,00 m");
+    this.dimLine(new THREE.Vector3(7.3, y, 0), new THREE.Vector3(7.3, y, 6), "6,00 m");
+
+    // dimensi tinggi total di sudut kanan-depan; label level zigzag agar tidak menumpuk
+    const hx = 6.85;
+    const hz = 6.85;
+    this.dimLine(new THREE.Vector3(hx, 0, hz), new THREE.Vector3(hx, yR, hz), `${f2(yR)} m`);
+    const levels: [number, string, number][] = [
+      [0, "±0,00 lantai", 6.85],
+      [t, `+${f2(t)} dinding`, 5.35],
+      [rbTop, `+${f2(rbTop)} ring balk`, 6.85],
+      [yR, `+${f2(yR)} nok`, 5.35],
+    ];
+    for (const [lv, txt, zOff] of levels) {
+      this.dimTick(new THREE.Vector3(hx, lv, hz), new THREE.Vector3(1, 0, 0));
+      const sp = this.makeDimSprite(txt);
+      sp.position.set(hx + 0.62, lv, zOff);
+      this.dimsGroup.add(sp);
+    }
+  }
+
+  private dimLine(a: THREE.Vector3, b: THREE.Vector3, label: string) {
+    const g = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const line = new THREE.Line(g, this.matDim);
+    line.renderOrder = 999;
+    this.dimsGroup.add(line);
+    this.disposables.push(g);
+    const dir = new THREE.Vector3().subVectors(b, a).normalize();
+    const perp = Math.abs(dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0).cross(dir).normalize();
+    this.dimTick(a, perp);
+    this.dimTick(b, perp);
+    const sp = this.makeDimSprite(label);
+    sp.position.copy(new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5)).addScaledVector(perp, 0.3);
+    this.dimsGroup.add(sp);
+  }
+
+  private dimTick(p: THREE.Vector3, perp: THREE.Vector3) {
+    const g = new THREE.BufferGeometry().setFromPoints([
+      p.clone().addScaledVector(perp, -0.09),
+      p.clone().addScaledVector(perp, 0.09),
+    ]);
+    const line = new THREE.Line(g, this.matDim);
+    line.renderOrder = 999;
+    this.dimsGroup.add(line);
+    this.disposables.push(g);
+  }
+
+  private makeDimSprite(text: string): THREE.Sprite {
+    const cv = document.createElement("canvas");
+    cv.width = 360;
+    cv.height = 96;
+    const ctx = cv.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "rgba(24, 26, 29, 0.92)";
+      ctx.strokeStyle = "rgba(232, 125, 62, 0.95)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(4, 4, 352, 88, 18);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#e8ecef";
+      ctx.textAlign = "center";
+      ctx.font = "600 38px 'Segoe UI', 'Noto Sans', sans-serif";
+      ctx.fillText(text, 180, 60);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4;
+    this.disposables.push(tex);
+    const sm = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+    this.disposables.push(sm);
+    const sp = new THREE.Sprite(sm);
+    sp.scale.set(0.98, 0.26, 1);
+    sp.renderOrder = 1000;
+    return sp;
+  }
+
   // --------------------------------------------------------------- util --
 
   private addBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material, receive = true) {
@@ -835,7 +1000,7 @@ export class HouseScene {
       this.matPlinth, this.matBeton, this.matBuis, this.matLantai, this.matAtap, this.matBaja,
       this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
       this.matPlester, this.matCatInt, this.matCatExt, this.matVent,
-      this.matVentFrame, this.matPintuGelap, this.matGround, this.matPlot,
+      this.matVentFrame, this.matPintuGelap, this.matGround, this.matPlot, this.matDim,
     ]) m.dispose();
     this.renderer.dispose();
   }
