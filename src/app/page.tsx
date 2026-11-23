@@ -18,6 +18,7 @@ import {
 import { SceneCanvas } from "@/components/house/SceneCanvas";
 import { PlanView } from "@/components/house/PlanView";
 import { RabPanel } from "@/components/house/RabPanel";
+import { ArchitectureGuide } from "@/components/house/ArchitectureGuide";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,27 +26,35 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { BrickWall, DraftingCompass, Info, Layers, Ruler, Wallet } from "lucide-react";
+import { BrickWall, DraftingCompass, HardHat, Info, Layers, Ruler, Wallet } from "lucide-react";
 
 export default function Home() {
   const [config, setConfig] = useState<HouseConfig>(DEFAULT_CONFIG);
   const [prices, setPrices] = useState<PriceBook>(DEFAULT_PRICES);
   const [upahPct, setUpahPct] = useState(25);
-  const [view, setView] = useState({ showRoof: true, showLabels: false, explode: 0, cutH: 4.5 });
+  const [view, setView] = useState({
+    showRoof: true,
+    showRangka: true,
+    showStruktur: true,
+    showLabels: false,
+    explode: 0,
+    cutH: 1000,
+  });
 
   const model = useMemo(() => buildModel(config), [config]);
   const rab = useMemo(() => buildRab(model, prices, upahPct), [model, prices, upahPct]);
 
-  const maxCut = config.tinggi + 1.5;
+  const maxCut = model.roof.yRidge + 0.4;
   const cutHClamped = Math.min(view.cutH, maxCut);
+  const cutActive = cutHClamped < maxCut - 0.001;
 
   const set = <K extends keyof HouseConfig>(key: K, val: HouseConfig[K]) => setConfig((c) => ({ ...c, [key]: val }));
 
   const gantiJenis = (jenis: "hebel" | "merah") => {
     if (jenis === "hebel") {
-      setConfig((c) => ({ ...DEFAULT_CONFIG, preset: c.preset, tinggi: c.tinggi }));
+      setConfig((c) => ({ ...DEFAULT_CONFIG, preset: c.preset, tinggi: c.tinggi, atapDeg: c.atapDeg, overhang: c.overhang }));
     } else {
-      setConfig((c) => ({ ...DEFAULT_CONFIG_MERAH, preset: c.preset, tinggi: c.tinggi }));
+      setConfig((c) => ({ ...DEFAULT_CONFIG_MERAH, preset: c.preset, tinggi: c.tinggi, atapDeg: c.atapDeg, overhang: c.overhang }));
     }
   };
 
@@ -54,18 +63,18 @@ export default function Home() {
     config.jenis === "hebel" ? "Tebal perekat hebel (nat)" : "Tebal nat / spesi pasangan";
   const natRange = config.jenis === "hebel" ? { min: 1, max: 6, step: 0.5 } : { min: 5, max: 20, step: 0.5 };
 
-  const cutActive = cutHClamped < maxCut - 0.001;
-
   return (
     <div className="min-h-screen bg-stone-100 pb-8">
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-4 py-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-700 text-white">
-            <BrickWall className="h-5 w-5" aria-hidden />
+            <HardHat className="h-5 w-5" aria-hidden />
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold tracking-tight text-stone-900">Prototype 3D Rumah 6 x 6 m</h1>
-            <p className="text-xs text-stone-500">Susunan bata batu demi batu, kebutuhan perekat/adukan, luas bersih, dan RAB — dihitung langsung dari model</p>
+            <p className="text-xs text-stone-500">
+              Referensi teknis arsitektur Indonesia: susunan bata batu demi batu, struktur (pondasi-sloof-kolom-ring balk), atap pelana, dan RAB per divisi pekerjaan
+            </p>
           </div>
         </div>
       </header>
@@ -165,6 +174,28 @@ export default function Home() {
                 </p>
               </div>
 
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <Label htmlFor="atapDeg">Kemiringan atap</Label>
+                  <span className="text-sm font-semibold tabular-nums text-stone-700">{fmtNum(config.atapDeg, 1)}&deg;</span>
+                </div>
+                <Slider id="atapDeg" value={[config.atapDeg]} min={22.5} max={40} step={2.5} onValueChange={(v) => set("atapDeg", v[0])} />
+                <p className="text-xs text-stone-500">
+                  Genteng beton ideal 30-40&deg; (nok naik {fmtNum(model.roof.apexAdd, 2)} m dari puncak ring balk). Terlalu landai &lt; 27,5&deg; berisiko rembes.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <Label htmlFor="overhang">Overstek atap (overhang)</Label>
+                  <span className="text-sm font-semibold tabular-nums text-stone-700">{fmtNum(config.overhang, 2)} m</span>
+                </div>
+                <Slider id="overhang" value={[config.overhang]} min={0} max={1.2} step={0.1} onValueChange={(v) => set("overhang", v[0])} />
+                <p className="text-xs text-stone-500">Perlindungan dinding & plesteran dari guyuran hujan: lazim 60-100 cm.</p>
+              </div>
+
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <Label htmlFor="waste">Faktor waste / susut</Label>
@@ -193,23 +224,31 @@ export default function Home() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <DraftingCompass className="h-4 w-4 text-amber-700" aria-hidden /> Tampilan 3D
               </CardTitle>
-              <CardDescription>Setiap kotak = satu bata (instansi nyata sesuai ukuran). Nat/perekat tampil sebagai garis abu-abu.</CardDescription>
+              <CardDescription>
+                Setiap kotak = satu bata (instansi nyata sesuai ukuran). Dinding pelana naik di atas ring balk; kuda-kuda baja ringan menopang reng & genteng.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <SceneCanvas model={model} view={{ ...view, cutH: cutActive ? cutHClamped : 1000 }} />
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2">
                   <Label htmlFor="showRoof" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
-                    Tampilkan atap
+                    Genteng
                   </Label>
                   <Switch id="showRoof" checked={view.showRoof} onCheckedChange={(v) => setView((s) => ({ ...s, showRoof: v }))} />
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2">
-                  <Label htmlFor="showLabels" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
-                    Label ruangan
+                  <Label htmlFor="showRangka" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
+                    Rangka atap
                   </Label>
-                  <Switch id="showLabels" checked={view.showLabels} onCheckedChange={(v) => setView((s) => ({ ...s, showLabels: v }))} />
+                  <Switch id="showRangka" checked={view.showRangka} onCheckedChange={(v) => setView((s) => ({ ...s, showRangka: v }))} />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2">
+                  <Label htmlFor="showStruktur" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
+                    Sloof/kolom/ring balk
+                  </Label>
+                  <Switch id="showStruktur" checked={view.showStruktur} onCheckedChange={(v) => setView((s) => ({ ...s, showStruktur: v }))} />
                 </div>
                 <div className="rounded-md border border-stone-200 px-3.5 py-2">
                   <div className="flex justify-between text-xs">
@@ -263,21 +302,24 @@ export default function Home() {
             icon={<Wallet className="h-4 w-4" aria-hidden />}
             title="Estimasi total RAB"
             value={fmtRp(rab.total)}
-            desc={`${fmtRp(rab.perM2Net)} per m2 luas bersih | ${model.openings.doors} pintu, ${model.openings.windows} jendela`}
+            desc={`${fmtRp(rab.perM2Net)} per m2 luas bersih | ${model.openings.doors} pintu, ${model.openings.windows} jendela, ${model.koloms.length} kolom praktis, ${model.roof.kudaKuda} kuda-kuda`}
           />
         </div>
 
         {/* ------------------------------------------------- denah & RAB -- */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Denah, luas bersih & anggaran</CardTitle>
-            <CardDescription>Denah menampilkan ukuran bersih tiap ruangan setelah dikurangi tebal dinding; RAB mengikuti model 3D.</CardDescription>
+            <CardTitle className="text-base">Denah, luas bersih, anggaran & panduan</CardTitle>
+            <CardDescription>
+              Denah menampilkan ukuran bersih tiap ruangan setelah dikurangi tebal dinding; RAB mengikuti model 3D; panduan memuat ilmu & tahapan arsitektur Indonesia.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="denah">
               <TabsList className="mb-4">
                 <TabsTrigger value="denah">Denah & Luas Bersih</TabsTrigger>
                 <TabsTrigger value="rab">Rencana Anggaran Biaya (RAB)</TabsTrigger>
+                <TabsTrigger value="panduan">Panduan Arsitektur</TabsTrigger>
               </TabsList>
               <TabsContent value="denah">
                 <PlanView model={model} />
@@ -289,6 +331,9 @@ export default function Home() {
                   onResetPrices={() => setPrices(DEFAULT_PRICES)}
                   onUpahChange={setUpahPct}
                 />
+              </TabsContent>
+              <TabsContent value="panduan">
+                <ArchitectureGuide model={model} />
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -302,16 +347,39 @@ export default function Home() {
             </div>
             <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-stone-600">
               <li>
-                Jumlah bata, volume adukan, luas dinding, dan luas bersih dihitung persis dari susunan bata di model 3D (dinding ujung atap pelana ikut dihitung),
-                sedangkan pondasi, rabat, keramik, plafon, kusen, dan instalasi adalah estimasi yang bisa diubah harganya pada tabel RAB.
+                Kuantitas bata, volume adukan, luas dinding, luas bersih, galian, pondasi, sloof, kolom praktis, ring balk, lisplank, dan atap dihitung langsung dari model 3D
+                (dinding pelana ikut dihitung di atas ring balk); rabat, keramik, plafon, kusen, instalasi, dan finishing adalah estimasi yang bisa diubah harganya pada tabel RAB.
               </li>
-              <li>Ukuran bata: hebel AAC 60 x 20 cm (tebal 7,5-20 cm); bata merah 20 x 10 x 5 cm dengan pasangan 1/2 batu. Nat hebel 2-3 mm memakai perekat instan (4 kg/m2); nat bata merah memakai adukan semen:pasir 1:5 (sekitar 6,3 zak semen dan 1 m3 pasir per m3 adukan). Sebagai pembanding, praktik toko material sering menyebut 8-10 zak semen per 1.000 bata — pemakaian nyata bisa lebih boros daripada hitungan geometris karena nat tidak rata dan sisa adukan; naikkan tebal nat atau waste untuk mensimulasikannya.</li>
-              <li>Harga satuan per November 2025 (kisaran pasar daring): hebel 7,5 cm sekitar Rp7.500/buah dan 10 cm sekitar Rp9.000/buah; bata merah Rp700-950/buah; semen 50 kg Rp68.000-77.000/zak; pasir pasang sekitar Rp350.000/m3; perekat hebel 40 kg Rp69.000-75.000/zak; rangka baja ringan C75 + reng sekitar Rp135.000/m2; genteng beton flat sekitar Rp6.000/buah (10 buah/m2). Sesuaikan dengan harga toko material setempat sebelum membangun.</li>
-              <li>Angka hasil kalkulator ini untuk perencanaan awal (prototype), bukan gambar kerja tersertifikasi. Konsultasikan struktur (pondasi, balok, kolom) dengan arsitek/insinyur sebelum eksekusi.</li>
+              <li>
+                Ukuran bata: hebel AAC 60 x 20 cm sesuai SNI 8640:2018 (tebal 7,5-20 cm); bata merah 20 x 10 x 5 cm pasangan 1/2 batu. Nat hebel 2-3 mm memakai perekat instan
+                (4 kg/m2); nat bata merah memakai adukan semen:pasir 1:5 (sekitar 6,3 zak semen dan 1 m3 pasir per m3 adukan). Sebagai pembanding, praktik lapangan sering memakai
+                8-10 zak semen per 1.000 bata — pemakaian nyata bisa lebih boros dari hitungan geometris; naikkan tebal nat atau waste untuk mensimulasikannya.
+              </li>
+              <li>
+                Struktur mengikuti praktik rumah sederhana 1 lantai: pondasi batu kali strip 40 x 60 cm, sloof & ring balk beton 15/20, kolom praktis 15/15 di tiap simpul dinding
+                (jarak maks 3 m), kuda-kuda baja ringan C75 jarak 1,2 m, reng 40 cm, genteng beton flat 10 pcs/m2, kemiringan atap ideal 30-40 derajat.
+              </li>
+              <li>
+                Bata di sekitar kolom praktis tidak dipotong pada model (kolom ditempel menonjol); volume bata di dalam bidang kolom tertutup oleh waste. Harga satuan per November 2025
+                (kisaran pasar daring): hebel 7,5 cm sekitar Rp7.500/buah dan 10 cm sekitar Rp9.000/buah; bata merah Rp700-950/buah; semen 50 kg Rp57.000-67.000/zak; pasir pasang
+                sekitar Rp350.000/m3; perekat hebel 40 kg Rp69.000-75.000/zak; rangka baja ringan C75 + reng sekitar Rp135.000/m2; genteng beton flat sekitar Rp6.000/buah (10 buah/m2);
+                beton bertulang sloof/kolom Rp1,9-2,1 juta/m3. Selalu cek harga toko material setempat sebelum membangun.
+              </li>
+              <li>
+                Angka aplikasi ini untuk perencanaan awal (prototype), bukan gambar kerja tersertifikasi. Konsultasikan struktur (pondasi, sloof, kolom, ring balk) dengan arsitek/insinyur
+                dan urus PBG (pengganti IMB) melalui OSS sesuai peraturan setempat sebelum eksekusi.
+              </li>
             </ul>
           </CardContent>
         </Card>
       </main>
+
+      <footer className="mt-8 border-t border-stone-200 bg-white">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-stone-500">
+          <span>Prototype 3D Rumah 6 x 6 m — referensi teknis & RAB dihitung langsung dari model.</span>
+          <span>Acuan: SNI 8640:2018 &middot; SNI 03-2965:1992 &middot; PUIL 2011 &middot; AHSP 2022</span>
+        </div>
+      </footer>
     </div>
   );
 }

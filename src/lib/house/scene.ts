@@ -1,22 +1,27 @@
 /**
- * Scene 3D rumah: instancing bata per dinding, mortar/nat, kusen, pintu,
- * jendela, pondasi, lantai, atap pelana, label ruangan, potongan (clipping)
- * dan mode bongkar (explode). Orbit kontrol custom (drag/zoom/pan).
+ * Scene 3D rumah (denah 6x6 m): instancing bata per dinding, mortar/nat, kusen,
+ * pintu, jendela, pondasi batu kali, sloof, kolom praktis, ring balk, atap
+ * pelana lengkap (kuda-kuda baja ringan, reng, genteng, lisplank, nok), label
+ * ruangan, potongan (clipping) dan mode bongkar (explode).
  * Denah memakai (x, y) meter -> three: X = x, Z = y, Y = ketinggian.
+ * Ridge atap memanjang sepanjang sumbu Z (dinding ujung pelana = depan/belakang).
  */
 import * as THREE from "three";
 import type { HouseModel, WallRT } from "@/lib/house/engine";
+import { RB_H } from "@/lib/house/engine";
 
 export interface ViewState {
-  showRoof: boolean;
+  showRoof: boolean; // genteng + lisplang + nok
+  showRangka: boolean; // kuda-kuda + reng (rangka baja ringan)
+  showStruktur: boolean; // sloof + kolom praktis + ring balk
   showLabels: boolean;
   explode: number; // 0..1
-  cutH: number; // ketinggian potongan (m); >= 10 = tidak dipotong
+  cutH: number; // ketinggian potongan (m); >= 1000 = tidak dipotong
 }
 
 type CameraPreset = "3d" | "depan" | "atas";
 
-const GROUND_Y = -0.25;
+const GROUND_Y = -0.55;
 
 export class HouseScene {
   private renderer: THREE.WebGLRenderer;
@@ -24,7 +29,10 @@ export class HouseScene {
   private camera: THREE.PerspectiveCamera;
   private canvas: HTMLCanvasElement;
   private houseRoot: THREE.Group = new THREE.Group();
+  private kolomGroup: THREE.Group = new THREE.Group();
   private roofGroup: THREE.Group = new THREE.Group();
+  private tilesGroup: THREE.Group = new THREE.Group();
+  private trussGroup: THREE.Group = new THREE.Group();
   private labelGroup: THREE.Group = new THREE.Group();
   private clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
@@ -32,7 +40,7 @@ export class HouseScene {
 
   // orbit state
   private target = new THREE.Vector3(3, 1.2, 3);
-  private sph = { radius: 12.5, theta: Math.PI * 0.15, phi: 1.02 };
+  private sph = { radius: 13, theta: Math.PI * 0.15, phi: 1.02 };
   private pointers = new Map<number, { x: number; y: number }>();
   private panMode = false;
   private pinchDist = 0;
@@ -50,10 +58,14 @@ export class HouseScene {
     depthWrite: false,
   });
   private matPlinth = new THREE.MeshStandardMaterial({ color: 0xb4b1a8, roughness: 0.9 });
+  private matBeton = new THREE.MeshStandardMaterial({ color: 0x8f9089, roughness: 0.82 });
   private matLantai = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.6 });
   private matAtap = new THREE.MeshStandardMaterial({ color: 0x555d63, roughness: 0.85 });
+  private matBaja = new THREE.MeshStandardMaterial({ color: 0x9aa8b2, roughness: 0.45, metalness: 0.55 });
+  private matGenteng = new THREE.MeshStandardMaterial({ color: 0x96524a, roughness: 0.75 });
+  private matLisplank = new THREE.MeshStandardMaterial({ color: 0xd8c9a8, roughness: 0.8 });
   private matPlafon = new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.95 });
-  private matRidge = new THREE.MeshStandardMaterial({ color: 0x464d52, roughness: 0.9 });
+  private matRidge = new THREE.MeshStandardMaterial({ color: 0x7c3f38, roughness: 0.8 });
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -67,7 +79,11 @@ export class HouseScene {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
 
-    const mats = [this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca, this.matPlinth, this.matLantai, this.matAtap, this.matPlafon, this.matRidge];
+    const mats = [
+      this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
+      this.matPlinth, this.matBeton, this.matLantai, this.matAtap, this.matBaja,
+      this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
+    ];
     for (const m of mats) m.clippingPlanes = [this.clipPlane];
 
     // pencahayaan
@@ -124,7 +140,10 @@ export class HouseScene {
     this.scene.add(new THREE.Line(outlineGeo, outlineMat));
 
     this.scene.add(this.houseRoot);
+    this.houseRoot.add(this.kolomGroup);
     this.scene.add(this.roofGroup);
+    this.roofGroup.add(this.tilesGroup);
+    this.roofGroup.add(this.trussGroup);
     this.scene.add(this.labelGroup);
 
     this.initOrbit();
@@ -200,14 +219,14 @@ export class HouseScene {
 
   setCameraPreset(p: CameraPreset) {
     if (p === "depan") {
-      this.target.set(3, 1.6, 3);
-      this.sph = { radius: 11, theta: 0, phi: 1.35 };
+      this.target.set(3, 2.0, 3);
+      this.sph = { radius: 12.5, theta: 0, phi: 1.3 };
     } else if (p === "atas") {
       this.target.set(3, 0, 3);
       this.sph = { radius: 13.5, theta: Math.PI * 0.001, phi: 0.03 };
     } else {
-      this.target.set(3, 1.2, 3);
-      this.sph = { radius: 12.5, theta: Math.PI * 0.15, phi: 1.02 };
+      this.target.set(3, 1.4, 3);
+      this.sph = { radius: 13, theta: Math.PI * 0.15, phi: 1.02 };
     }
   }
 
@@ -239,9 +258,15 @@ export class HouseScene {
   // --------------------------------------------------------------- update --
 
   update(model: HouseModel, view: ViewState) {
-    // bersihkan rumah lama
+    // bersihkan rumah lama (grup persisten dilepas, lalu dipasang kembali)
     this.clearGroup(this.houseRoot);
+    this.houseRoot.add(this.kolomGroup);
+    this.clearGroup(this.kolomGroup);
     this.clearGroup(this.roofGroup);
+    this.roofGroup.add(this.tilesGroup);
+    this.roofGroup.add(this.trussGroup);
+    this.clearGroup(this.tilesGroup);
+    this.clearGroup(this.trussGroup);
     this.clearGroup(this.labelGroup);
 
     // potongan
@@ -252,15 +277,22 @@ export class HouseScene {
 
     const tL = model.config.tLuar / 1000;
     const tinggi = model.config.tinggi;
-    const nat = model.config.natMm / 1000;
 
     // lantai interior (rabat + keramik) di Y=0
     const lantaiW = 6 - 2 * tL;
     this.addBox(this.houseRoot, 3, -0.05, 3, lantaiW, 0.1, lantaiW, this.matLantai, true);
 
-    // dinding: pondasi strip + mortar slab + bata (instancing per dinding) + kusen
+    // dinding: pondasi batu kali + sloof + bata (instancing per dinding) + ring balk + kusen
     for (const w of model.walls) {
-      this.buildWall(w, model, nat);
+      this.buildWall(w, model, view.showStruktur);
+    }
+
+    // kolom praktis 15/15 di tiap simpul dinding
+    if (view.showStruktur) {
+      const kw = Math.max(0.15, tL + 0.015);
+      for (const k of model.koloms) {
+        this.addBox(this.kolomGroup, k.x, (tinggi + RB_H) / 2, k.y, kw, tinggi + RB_H, kw, this.matBeton);
+      }
     }
 
     // atap + plafon
@@ -285,10 +317,13 @@ export class HouseScene {
         g.position.set(d[0] * view.explode * 1.4, 0, d[1] * view.explode * 1.4);
       }
     }
-    this.roofGroup.visible = view.showRoof;
+    this.roofGroup.visible = view.showRoof || view.showRangka;
+    this.tilesGroup.visible = view.showRoof;
+    this.trussGroup.visible = view.showRangka;
+    this.kolomGroup.visible = view.showStruktur;
   }
 
-  private buildWall(w: WallRT, model: HouseModel, _nat: number) {
+  private buildWall(w: WallRT, model: HouseModel, showStruktur: boolean) {
     const group = new THREE.Group();
     group.userData.explodeDir = w.explodeDir;
     this.houseRoot.add(group);
@@ -296,18 +331,27 @@ export class HouseScene {
     const len = w.hi - w.lo;
     const t = w.t;
     const mid = (w.lo + w.hi) / 2;
+    const bw = Math.max(0.15, t + 0.01); // lebar sloof / ring balk (15 cm standar)
 
-    // pondasi strip (25 cm lebih lebar keluar dua sisi? keluar 6 cm tiap sisi)
-    const pt = t + 0.12;
+    // pondasi batu kali: 40 x 60 cm, dari -0,6 s/d -0,2 m
+    const pt = t + 0.15;
+    // sloof beton 15/20: dari -0,2 s/d 0 m
+    // ring balk 15/20: dari tinggi s/d tinggi + 0,2 m (dasar dinding pelana)
     if (w.axis === "h") {
-      this.addBox(group, mid, GROUND_Y + 0.125, w.c, len, 0.25, pt, this.matPlinth);
-      this.addBox(group, mid, -0.05, w.c, len, 0.1, t, this.matPlinth); // slop lantai di bawah dinding
+      this.addBox(group, mid, -0.4, w.c, len, 0.4, pt, this.matPlinth);
+      if (showStruktur) {
+        this.addBox(group, mid, -0.1, w.c, len, RB_H, bw, this.matBeton);
+        this.addBox(group, mid, w.h + RB_H / 2, w.c, len, RB_H, bw, this.matBeton);
+      }
     } else {
-      this.addBox(group, w.c, GROUND_Y + 0.125, mid, pt, 0.25, len, this.matPlinth);
-      this.addBox(group, w.c, -0.05, mid, t, 0.1, len, this.matPlinth);
+      this.addBox(group, w.c, -0.4, mid, pt, 0.4, len, this.matPlinth);
+      if (showStruktur) {
+        this.addBox(group, w.c, -0.1, mid, bw, RB_H, len, this.matBeton);
+        this.addBox(group, w.c, w.h + RB_H / 2, mid, bw, RB_H, len, this.matBeton);
+      }
     }
 
-    // mortar/nat slab: kotak-kotak menghindari bukaan
+    // mortar/nat slab: kotak-kotak menghindari bukaan (hanya sampai tinggi dinding datar)
     const segs: { lo: number; hi: number; z0: number; z1: number }[] = [];
     const ops = [...w.openings].sort((a, b) => a.from - b.from);
     let cursor = w.lo;
@@ -326,12 +370,13 @@ export class HouseScene {
       else this.addBox(group, w.c, (s.z0 + s.z1) / 2, (s.lo + s.hi) / 2, t, s.z1 - s.z0, s.hi - s.lo, this.matMortar);
     }
 
-    // segitiga mortar di ujung atap pelana (dinding depan/belakang)
+    // segitiga mortar di ujung atap pelana (dinding depan/belakang), di atas ring balk
     if (w.gable) {
+      const baseZ = w.gable.baseZ;
       const shape = new THREE.Shape();
-      shape.moveTo(w.lo, w.h);
-      shape.lineTo(w.hi, w.h);
-      shape.lineTo(w.gable.apexAt, w.h + w.gable.apexAdd);
+      shape.moveTo(w.lo, baseZ);
+      shape.lineTo(w.hi, baseZ);
+      shape.lineTo(w.gable.apexAt, baseZ + w.gable.apexAdd);
       shape.closePath();
       const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
       const mesh = new THREE.Mesh(geo, this.matMortar);
@@ -376,10 +421,8 @@ export class HouseScene {
       const midO = (o.from + o.to) / 2;
       const ft = t + 0.02; // tebal kusen menonjol sedikit dari muka dinding
       if (w.axis === "h") {
-        // tiang kiri kanan
         this.addBox(group, o.from + 0.03, (o.sill + o.top) / 2, w.c, 0.06, o.top - o.sill, ft, this.matKusen);
         this.addBox(group, o.to - 0.03, (o.sill + o.top) / 2, w.c, 0.06, o.top - o.sill, ft, this.matKusen);
-        // palang atas & bawah
         this.addBox(group, midO, o.top - 0.045, w.c, wdt, 0.09, ft, this.matKusen);
         if (o.sill > 0) this.addBox(group, midO, o.sill + 0.045, w.c, wdt, 0.09, ft, this.matKusen);
         if (o.kind === "pintu") {
@@ -403,46 +446,124 @@ export class HouseScene {
     }
   }
 
+  /**
+   * Atap pelana dengan ridge memanjang sepanjang Z (di x = 3).
+   * Bidang atap menurun ke dinding kiri (x = 0) dan kanan (x = 6);
+   * dinding ujung pelana adalah dinding depan (z = 6) dan belakang (z = 0).
+   * Kemiringan arah turun = ke bawah ke arah luar; PERBAIKAN versi lama:
+   * kemiringan pernah terbalik (valley), sekarang puncak di ridge.
+   */
   private buildRoof(model: HouseModel, view: ViewState) {
-    if (!view.showRoof) return;
     const tL = model.config.tLuar / 1000;
     const tinggi = model.config.tinggi;
-    const apex = model.roof.apexAdd; // 1.5
-    const pitch = apex / 3;
+    const apex = model.roof.apexAdd;
+    const pitch = model.roof.pitch; // tan(kemiringan)
     const ov = model.roof.overhang;
-    const yRidge = tinggi + apex;
+    const rBase = tinggi + RB_H; // puncak ring balk = dasar dinding pelana / eaves
+    const yRidge = model.roof.yRidge; // rBase + apex
+    const ang = Math.atan(pitch);
     const zLen = 6 + 2 * ov;
-    const slopeHalf = Math.hypot(3 + ov, apex + ov * pitch);
-    const ang = Math.atan2(apex + ov * pitch, 3 + ov);
-    const angDeg = (ang * 180) / Math.PI;
+
+    // tinggi bidang atap pada jarak horizontal hx dari ridge
+    const planeY = (hx: number) => yRidge - hx * pitch;
 
     // plafon mengikuti area bersih
     const cw = 6 - 2 * tL;
     this.addBox(this.roofGroup, 3, tinggi + 0.02, 3, cw, 0.03, cw, this.matPlafon);
 
-    // dua bidang atap
-    const mkSlope = (mirror: boolean) => {
-      const g = new THREE.BoxGeometry(slopeHalf, 0.04, zLen);
-      const mesh = new THREE.Mesh(g, this.matAtap);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      const cx = mirror ? 3 + (3 + ov) / 2 : 3 - (3 + ov) / 2;
-      const cy = (yRidge + (tinggi - ov * pitch)) / 2;
-      mesh.position.set(cx, cy, 3);
-      mesh.rotation.z = mirror ? angDeg * (Math.PI / 180) : -angDeg * (Math.PI / 180);
-      this.roofGroup.add(mesh);
-      this.disposables.push(g);
-    };
-    mkSlope(false);
-    mkSlope(true);
+    // ---------- rangka baja ringan (kuda-kuda + reng) ----------
+    // kuda-kuda: rangka C75 pada jarak 1,2 m, tapak di atas ring balk
+    const kuda = model.roof.kudaKuda;
+    for (let i = 0; i < kuda; i++) {
+      const z = 0.3 + i * ((6 - 0.6) / (kuda - 1));
+      // ikatan bawah (bottom chord) sepanjang dinding kiri-kanan
+      this.addBox(this.trussGroup, 3, rBase + 0.05, z, 5.6, 0.075, 0.06, this.matBaja);
+      // dua kasau (top chord) naik ke ridge
+      const dx = 2.75;
+      const dy = apex - 0.12;
+      const L = Math.hypot(dx, dy);
+      const angR = Math.atan2(dy, dx);
+      const cyR = (rBase + 0.09 + yRidge - 0.03) / 2;
+      // kiri: ujung +X (ridge) harus NAIK -> rotasi positif
+      this.addTiltedBox(this.trussGroup, 3 - dx / 2, cyR, z, L, 0.075, 0.06, angR, this.matBaja);
+      // kanan: ujung -X (ridge) naik -> rotasi negatif
+      this.addTiltedBox(this.trussGroup, 3 + dx / 2, cyR, z, L, 0.075, 0.06, -angR, this.matBaja);
+      // tiang tengah (king post)
+      if (apex > 0.5) {
+        this.addBox(this.trussGroup, 3, rBase + 0.09 + (apex - 0.14) / 2, z, 0.05, apex - 0.14, 0.05, this.matBaja);
+      }
+    }
 
-    // nok
-    const g = new THREE.BoxGeometry(0.16, 0.14, zLen + 0.06);
-    const nok = new THREE.Mesh(g, this.matRidge);
-    nok.castShadow = true;
-    nok.position.set(3, yRidge + 0.05, 3);
-    this.roofGroup.add(nok);
-    this.disposables.push(g);
+    // reng: melintang sepanjang Z di atas kasau, jarak ~40 cm sepanjang bidang
+    for (const s of [-1, 1]) {
+      for (let hx = 0.35; hx <= 3 + ov - 0.05; hx += 0.4) {
+        this.addTiltedBox(
+          this.trussGroup,
+          3 + s * hx,
+          planeY(hx) + 0.075,
+          3,
+          0.05,
+          0.05,
+          zLen,
+          s > 0 ? -ang : ang,
+          this.matBaja,
+        );
+      }
+    }
+
+    // ---------- genteng + lisplank + nok ----------
+    if (view.showRoof) {
+      // genteng beton flat: baris sepanjang Z, tumpukan tiap ~40 cm sepanjang bidang
+      const dxTile = 0.4 * Math.cos(ang);
+      const tileL = dxTile * 1.04;
+      const nRows = Math.max(2, Math.ceil((3 + ov) / dxTile));
+      const zCount = Math.max(2, Math.ceil(zLen / 0.26));
+      for (const s of [-1, 1]) {
+        const geo = new THREE.BoxGeometry(tileL, 0.02, 0.24);
+        const im = new THREE.InstancedMesh(geo, this.matGenteng, nRows * zCount);
+        im.castShadow = true;
+        im.receiveShadow = true;
+        const m4 = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const axis = new THREE.Vector3(0, 0, 1);
+        const col = new THREE.Color();
+        const base = new THREE.Color(0x96524a);
+        let idx = 0;
+        for (let i = 0; i < nRows; i++) {
+          const hx = (i + 0.5) * dxTile;
+          for (let jj = 0; jj < zCount; jj++) {
+            const z = -ov + (jj + 0.5) * (zLen / zCount);
+            q.setFromAxisAngle(axis, s > 0 ? -ang : ang);
+            m4.compose(
+              new THREE.Vector3(3 + s * hx, planeY(hx) + 0.09, z),
+              q,
+              new THREE.Vector3(1, 1, 1),
+            );
+            im.setMatrixAt(idx, m4);
+            const r = mulberry32(idx * 2654435761 + (s > 0 ? 7 : 13))();
+            col.copy(base).offsetHSL(0.004 * (r - 0.5), 0.06 * (r - 0.5), 0.07 * (r - 0.5));
+            im.setColorAt(idx, col);
+            idx++;
+          }
+        }
+        this.tilesGroup.add(im);
+        this.disposables.push(geo);
+      }
+
+      // lisplank pada kedua ujung eaves (sisi kiri & kanan)
+      for (const s of [-1, 1]) {
+        const x = 3 + s * (3 + ov) - s * 0.02;
+        this.addBox(this.tilesGroup, x, planeY(3 + ov) - 0.1, 3, 0.035, 0.2, zLen, this.matLisplank);
+      }
+
+      // nok (ridge cap) menutup pertemuan dua bidang genteng
+      const g = new THREE.BoxGeometry(0.3, 0.06, zLen + 0.04);
+      const nok = new THREE.Mesh(g, this.matRidge);
+      nok.castShadow = true;
+      nok.position.set(3, yRidge + 0.11, 3);
+      this.tilesGroup.add(nok);
+      this.disposables.push(g);
+    }
   }
 
   // --------------------------------------------------------------- util --
@@ -453,6 +574,19 @@ export class HouseScene {
     m.position.set(x, y, z);
     m.castShadow = true;
     m.receiveShadow = receive;
+    parent.add(m);
+    this.disposables.push(g);
+    return m;
+  }
+
+  /** Kotak miring di sumbu Z: rotasi positif menaikkan ujung +X, negatif menurunkan. */
+  private addTiltedBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotZ: number, mat: THREE.Material) {
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    const m = new THREE.Mesh(g, mat);
+    m.position.set(x, y, z);
+    m.rotation.z = rotZ;
+    m.castShadow = true;
+    m.receiveShadow = true;
     parent.add(m);
     this.disposables.push(g);
     return m;
@@ -505,7 +639,11 @@ export class HouseScene {
     this.canvas.removeEventListener("pointercancel", this.onUp);
     this.canvas.removeEventListener("wheel", this.onWheel);
     for (const d of this.disposables) d.dispose();
-    for (const m of [this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca, this.matPlinth, this.matLantai, this.matAtap, this.matPlafon, this.matRidge]) m.dispose();
+    for (const m of [
+      this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
+      this.matPlinth, this.matBeton, this.matLantai, this.matAtap, this.matBaja,
+      this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
+    ]) m.dispose();
     this.renderer.dispose();
   }
 }

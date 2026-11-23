@@ -31,9 +31,11 @@ export function SceneCanvas({ model, view }: Props) {
     sceneRef.current?.update(model, view);
   }, [model, view]);
 
+  const isHebel = model.config.jenis === "hebel";
+
   return (
     <div className="relative h-[420px] w-full overflow-hidden rounded-md sm:h-[520px] lg:h-[560px]">
-      <canvas ref={canvasRef} className="h-full w-full cursor-grab active:cursor-grabbing" aria-label="Tampilan 3D rumah dengan susunan bata" />
+      <canvas ref={canvasRef} className="h-full w-full cursor-grab active:cursor-grabbing" aria-label="Tampilan 3D rumah dengan susunan bata dan struktur" />
 
       <div className="pointer-events-none absolute left-2 top-2 flex flex-col gap-1">
         <div className="pointer-events-auto flex items-center gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] font-medium text-stone-700 shadow-sm backdrop-blur">
@@ -42,6 +44,9 @@ export function SceneCanvas({ model, view }: Props) {
         </div>
         <div className="pointer-events-auto rounded-md bg-white/85 px-2 py-1 text-[10px] text-stone-500 shadow-sm backdrop-blur">
           Geser = putar | Roda/cubit = zoom | Shift+geser = geser pandangan
+        </div>
+        <div className="pointer-events-auto rounded-md bg-white/85 px-2 py-1 text-[10px] text-stone-500 shadow-sm backdrop-blur">
+          Atap pelana {fmtNum(model.roof.deg, 1)}&deg; &middot; {model.roof.kudaKuda} kuda-kuda &middot; nok di ketinggian {fmtNum(model.roof.yRidge, 2)} m
         </div>
       </div>
 
@@ -57,14 +62,26 @@ export function SceneCanvas({ model, view }: Props) {
         </Button>
       </div>
 
-      <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-white/85 px-2 py-1 text-[10px] leading-relaxed text-stone-600 shadow-sm backdrop-blur">
-        <span className="mr-2 inline-flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: model.config.jenis === "hebel" ? "#eceae3" : "#a3492f", border: "1px solid #b5b0a6" }} />
-          {model.config.jenis === "hebel" ? "Bata putih (hebel)" : "Bata merah"}
+      <div className="pointer-events-none absolute bottom-2 left-2 flex max-w-[92%] flex-wrap gap-x-3 gap-y-1 rounded-md bg-white/85 px-2 py-1 text-[10px] leading-relaxed text-stone-600 shadow-sm backdrop-blur">
+        <span className="mr-1 inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: isHebel ? "#eceae3" : "#a3492f", border: "1px solid #b5b0a6" }} />
+          {isHebel ? "Bata putih (hebel)" : "Bata merah"}
         </span>
-        <span className="mr-2 inline-flex items-center gap-1">
+        <span className="mr-1 inline-flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#9d9d96]" />
           Nat / perekat {model.config.natMm} mm
+        </span>
+        <span className="mr-1 inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#8f9089]" />
+          Beton (sloof, kolom, ring balk)
+        </span>
+        <span className="mr-1 inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#9aa8b2]" />
+          Rangka baja ringan
+        </span>
+        <span className="mr-1 inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#96524a]" />
+          Genteng beton
         </span>
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#83552d]" />

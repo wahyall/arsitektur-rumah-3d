@@ -20,9 +20,10 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-stone-600">
-          Semua harga satuan bisa langsung diubah pada kolom <span className="font-medium">Harga satuan</span> — total, kebutuhan bata, dan adukan dihitung ulang
-          otomatis dari susunan 3D.
+        <p className="max-w-3xl text-sm text-stone-600">
+          RAB disusun per divisi pekerjaan (format standar Indonesia). Semua harga satuan bisa langsung diubah pada kolom{" "}
+          <span className="font-medium">Harga satuan</span> — kuantitas bata, adukan, struktur, dan atap dihitung ulang
+          otomatis dari model 3D.
         </p>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={onResetPrices}>
           <RotateCcw className="h-3.5 w-3.5" aria-hidden /> Reset harga awal
@@ -30,7 +31,7 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
       </div>
 
       <div className="overflow-x-auto rounded-md border border-stone-200">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead className="bg-stone-100 text-left text-xs uppercase tracking-wide text-stone-500">
             <tr>
               <th className="px-3 py-2 font-medium">Uraian pekerjaan / material</th>
@@ -40,39 +41,8 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
-            {rab.rows.map((r) => (
-              <tr key={r.id + r.priceKey} className="bg-white align-top">
-                <td className="px-3 py-2.5">
-                  <div className="font-medium text-stone-800">{r.uraian}</div>
-                  <div className="mt-0.5 flex items-center gap-2">
-                    <span className="text-xs text-stone-500">{r.spek}</span>
-                    {r.exact ? (
-                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-700">
-                        dari model 3D
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="border-stone-200 bg-stone-50 px-1.5 text-[10px] font-medium text-stone-500">
-                        estimasi
-                      </Badge>
-                    )}
-                  </div>
-                </td>
-                <td className="px-3 py-2.5 whitespace-nowrap text-stone-600">
-                  {fmtNum(r.qty, r.qty % 1 === 0 ? 0 : 1)} <span className="text-xs text-stone-400">{r.unit}</span>
-                </td>
-                <td className="px-3 py-1.5">
-                  <Input
-                    type="number"
-                    min={0}
-                    step={100}
-                    className="h-8 w-36 text-right tabular-nums"
-                    value={r.harga}
-                    aria-label={`Harga satuan ${r.uraian}`}
-                    onChange={(e) => onPriceChange(r.priceKey, Math.max(0, Number(e.target.value)))}
-                  />
-                </td>
-                <td className="px-3 py-2.5 text-right font-medium tabular-nums text-stone-800">{fmtRp(r.subtotal)}</td>
-              </tr>
+            {rab.divisions.map((d) => (
+              <DivisionBlock key={d.id} divisi={d} onPriceChange={onPriceChange} />
             ))}
           </tbody>
         </table>
@@ -88,6 +58,9 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
             <span className="text-stone-500">{rab.upahPct}% dari material</span>
             <span className="font-semibold tabular-nums text-stone-800">{fmtRp(rab.upah)}</span>
           </div>
+          <p className="mt-2 text-xs leading-relaxed text-stone-500">
+            Borongan pasang di Indonesia umumnya 20-30% dari nilai material, tergantung daerah dan tingkat kesulitan.
+          </p>
         </div>
 
         <div className="rounded-md border border-amber-200 bg-amber-50/60 p-4">
@@ -113,9 +86,72 @@ export function RabPanel({ rab, onPriceChange, onResetPrices, onUpahChange }: Pr
               <span>Per m2 luas bersih</span>
               <span className="tabular-nums">{fmtRp(rab.perM2Net)}</span>
             </div>
+            <p className="pt-1 text-[11px] leading-relaxed text-stone-500">
+              Patokan umum biaya bangun rumah sederhana 2025: Rp2,0-3,5 juta per m2. Simpan cadangan 5-10% dari total untuk kenaikan harga.
+            </p>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function DivisionBlock({
+  divisi,
+  onPriceChange,
+}: {
+  divisi: RabSummary["divisions"][number];
+  onPriceChange: (key: string, val: number) => void;
+}) {
+  return (
+    <>
+      <tr className="bg-stone-200/70">
+        <td colSpan={4} className="px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-sm bg-stone-700 px-1 text-[10px] font-bold text-white">
+                {divisi.kode}
+              </span>
+              <span className="text-xs font-bold uppercase tracking-wide text-stone-700">{divisi.nama}</span>
+            </div>
+            <span className="text-xs font-semibold tabular-nums text-stone-600">Subtotal: {fmtRp(divisi.subtotal)}</span>
+          </div>
+        </td>
+      </tr>
+      {divisi.rows.map((r) => (
+        <tr key={r.id + r.priceKey} className="bg-white align-top">
+          <td className="px-3 py-2.5">
+            <div className="font-medium text-stone-800">{r.uraian}</div>
+            <div className="mt-0.5 flex items-center gap-2">
+              <span className="text-xs text-stone-500">{r.spek}</span>
+              {r.exact ? (
+                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-700">
+                  dari model 3D
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-stone-200 bg-stone-50 px-1.5 text-[10px] font-medium text-stone-500">
+                  estimasi
+                </Badge>
+              )}
+            </div>
+          </td>
+          <td className="px-3 py-2.5 whitespace-nowrap text-stone-600">
+            {fmtNum(r.qty, r.qty % 1 === 0 ? 0 : 2)} <span className="text-xs text-stone-400">{r.unit}</span>
+          </td>
+          <td className="px-3 py-1.5">
+            <Input
+              type="number"
+              min={0}
+              step={100}
+              className="h-8 w-36 text-right tabular-nums"
+              value={r.harga}
+              aria-label={`Harga satuan ${r.uraian}`}
+              onChange={(e) => onPriceChange(r.priceKey, Math.max(0, Number(e.target.value)))}
+            />
+          </td>
+          <td className="px-3 py-2.5 text-right font-medium tabular-nums text-stone-800">{fmtRp(r.subtotal)}</td>
+        </tr>
+      ))}
+    </>
   );
 }
