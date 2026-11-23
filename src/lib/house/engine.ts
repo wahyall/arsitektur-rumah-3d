@@ -54,7 +54,207 @@ export interface LayoutPreset {
   desc: string;
   walls: WallSpec[];
   rooms: RoomSpec[];
+  mep: MepSpec;
 }
+
+// ------------------------------------------------------------- instalasi --
+
+/** Titik instalasi (MEP): fitel air, titik listrik, panel, meteran. */
+export type MepKind =
+  | "meter_air"
+  | "panel"
+  | "lampu"
+  | "saklar"
+  | "stopkontak"
+  | "kran"
+  | "shower"
+  | "kloset"
+  | "drain";
+
+/** Titik jalur instalasi. h = ketinggian (m); rel=true -> dihitung dari plafon (tinggi + h). */
+export interface MepPt {
+  x: number;
+  z: number;
+  h: number;
+  rel?: boolean;
+}
+
+export interface MepPointSpec {
+  id: string;
+  kind: MepKind;
+  label: string;
+  x: number;
+  z: number;
+  h: number; // 0 = di lantai (fitel); tinggi mutlak utk item dinding
+  rel?: boolean;
+}
+
+export type MepJenis = "air_bersih" | "air_kotor" | "listrik";
+
+/** Polyline jalur instalasi 3D (x, z denah; h ketinggian, rel = tinggi + h). */
+export interface MepRouteSpec {
+  id: string;
+  jenis: MepJenis;
+  label: string;
+  sirkuit?: "lampu" | "kontak"; // khusus listrik: circuit lampu 1,5 mm2 / stop kontak 2,5 mm2
+  pts: MepPt[];
+}
+
+export interface MepSpec {
+  points: MepPointSpec[];
+  routes: MepRouteSpec[];
+  septic: { x: number; z: number };
+  resapan: { x: number; z: number };
+}
+
+const P = (x: number, z: number, h: number, rel = false): MepPt => ({ x, z, h, rel });
+
+/** Ketinggian standar praktik: saklar 140 cm, stop kontak 30 cm, kran 105 cm, panel 150 cm. */
+const H_SAKLAR = 1.4;
+const H_KONTAK = 0.3;
+const H_KRAN = 1.05;
+const H_PANEL = 1.5;
+const H_SHOWER = 2.05;
+const Y_BERSIH = -0.32; // pipa air bersih bawah rabat (dalam urugan pasir)
+const Y_KOTOR = -0.55; // pipa limbah bawah lantai, diberi kemiringan ke septic
+
+/**
+ * MEP preset "2br" — meteran di belakang dekat dapur; jalur limbah keluar
+ * belakang ke septic + resapan; panel MCB di dinding depan dekat pintu utama;
+ * conduit di rongga plafon (tinggi + 12 cm) dengan drop ke saklar/stop kontak.
+ */
+const MEP_2BR: MepSpec = {
+  points: [
+    { id: "mtr", kind: "meter_air", label: "Meter air + stop kran", x: 5.35, z: -0.75, h: -0.35 },
+    { id: "krn", kind: "kran", label: "Kran dapur", x: 5.35, z: 0.14, h: H_KRAN },
+    { id: "shr", kind: "shower", label: "Shower KM", x: 4.22, z: 1.05, h: H_SHOWER },
+    { id: "klt", kind: "kloset", label: "Kloset duduk", x: 3.75, z: 0.42, h: 0 },
+    { id: "drn", kind: "drain", label: "Floor drain KM", x: 3.3, z: 1.2, h: 0.02 },
+    { id: "pnl", kind: "panel", label: "Panel MCB + meteran listrik", x: 5.55, z: 6.1, h: H_PANEL },
+    { id: "l1", kind: "lampu", label: "Lampu ruang keluarga", x: 4.5, z: 3.75, h: -0.01, rel: true },
+    { id: "l2", kind: "lampu", label: "Lampu dapur", x: 5.25, z: 0.75, h: -0.01, rel: true },
+    { id: "l3", kind: "lampu", label: "Lampu KM", x: 3.75, z: 0.75, h: -0.01, rel: true },
+    { id: "l4", kind: "lampu", label: "Lampu kamar 1", x: 1.5, z: 4.5, h: -0.01, rel: true },
+    { id: "l5", kind: "lampu", label: "Lampu kamar 2", x: 1.5, z: 1.5, h: -0.01, rel: true },
+    { id: "l6", kind: "lampu", label: "Lampu teras", x: 4.65, z: 6.35, h: 2.4 },
+    { id: "l7", kind: "lampu", label: "Lampu belakang", x: 5.3, z: -0.35, h: 2.4 },
+    { id: "s1", kind: "saklar", label: "Saklar keluarga + teras", x: 5.3, z: 5.93, h: H_SAKLAR },
+    { id: "s2", kind: "saklar", label: "Saklar kamar 1", x: 2.9, z: 4.35, h: H_SAKLAR },
+    { id: "s3", kind: "saklar", label: "Saklar kamar 2", x: 2.9, z: 1.05, h: H_SAKLAR },
+    { id: "s4", kind: "saklar", label: "Saklar KM", x: 4.42, z: 1.3, h: H_SAKLAR },
+    { id: "s5", kind: "saklar", label: "Saklar dapur + belakang", x: 5.6, z: 0.12, h: H_SAKLAR },
+    { id: "sk1", kind: "stopkontak", label: "Stop kontak kamar 1", x: 0.12, z: 3.5, h: H_KONTAK },
+    { id: "sk2", kind: "stopkontak", label: "Stop kontak kamar 1 (b)", x: 2.9, z: 5.5, h: H_KONTAK },
+    { id: "sk3", kind: "stopkontak", label: "Stop kontak kamar 2", x: 0.12, z: 1.3, h: H_KONTAK },
+    { id: "sk4", kind: "stopkontak", label: "Stop kontak kamar 2 (b)", x: 2.9, z: 2.2, h: H_KONTAK },
+    { id: "sk5", kind: "stopkontak", label: "Stop kontak keluarga", x: 5.88, z: 3.5, h: H_KONTAK },
+    { id: "sk6", kind: "stopkontak", label: "Stop kontak keluarga (b)", x: 3.1, z: 2.2, h: H_KONTAK },
+    { id: "sk7", kind: "stopkontak", label: "Stop kontak dapur", x: 5.88, z: 0.75, h: H_KONTAK },
+    { id: "sk8", kind: "stopkontak", label: "Stop kontak KM", x: 3.1, z: 0.3, h: H_KONTAK },
+    { id: "sk9", kind: "stopkontak", label: "Stop kontak teras", x: 5.75, z: 6.08, h: H_KONTAK },
+  ],
+  routes: [
+    { id: "ab1", jenis: "air_bersih", label: "Meter → dapur", pts: [P(5.35, -0.75, -0.35), P(5.35, 0.14, Y_BERSIH), P(5.35, 0.14, H_KRAN)] },
+    { id: "ab2", jenis: "air_bersih", label: "Bawah lantai → KM", pts: [P(5.35, 0.3, Y_BERSIH), P(4.22, 0.3, Y_BERSIH), P(4.22, 1.05, Y_BERSIH), P(4.22, 1.05, H_SHOWER)] },
+    { id: "ab3", jenis: "air_bersih", label: "Cabang kloset", pts: [P(4.22, 0.3, Y_BERSIH), P(3.75, 0.42, Y_BERSIH), P(3.75, 0.42, 0.2)] },
+    { id: "ak1", jenis: "air_kotor", label: "Kloset → jalur utama", pts: [P(3.75, 0.42, 0.2), P(3.75, 0.42, Y_KOTOR), P(5.35, 0.42, -0.58)] },
+    { id: "ak2", jenis: "air_kotor", label: "Sink dapur → utama", pts: [P(5.35, 0.14, 0.35), P(5.35, 0.14, -0.5), P(5.35, 0.42, -0.58)] },
+    { id: "ak3", jenis: "air_kotor", label: "Shower → utama", pts: [P(4.22, 1.05, 0.02), P(4.22, 1.05, -0.5), P(4.22, 0.42, -0.56)] },
+    { id: "ak4", jenis: "air_kotor", label: "Floor drain → utama", pts: [P(3.3, 1.2, 0.02), P(3.3, 1.2, -0.47), P(3.3, 0.42, -0.52), P(3.75, 0.42, Y_KOTOR)] },
+    {
+      id: "ak5",
+      jenis: "air_kotor",
+      label: "Jalur utama → septic",
+      pts: [P(3.75, 0.42, Y_KOTOR), P(5.35, 0.42, -0.58), P(5.35, 0, -0.6), P(5.35, -0.9, -0.64), P(5.35, -1.55, -0.68), P(5.35, -1.55, -0.4)],
+    },
+    { id: "ak6", jenis: "air_kotor", label: "Septic → resapan", pts: [P(5.35, -3.1, -1.1), P(5.35, -3.9, -1.1), P(5.35, -3.9, -0.55)] },
+    { id: "l0", jenis: "listrik", label: "Panel → plafon", pts: [P(5.55, 6.1, H_PANEL), P(5.5, 5.93, H_PANEL), P(5.5, 5.93, 0.12, true)] },
+    { id: "l1", jenis: "listrik", label: "Lampu keluarga", pts: [P(5.5, 5.93, 0.12, true), P(4.5, 5.93, 0.12, true), P(4.5, 3.75, 0.12, true), P(4.5, 3.75, -0.01, true)] },
+    { id: "l2", jenis: "listrik", label: "Lampu teras", pts: [P(5.5, 5.93, 0.12, true), P(4.65, 5.93, 0.12, true), P(4.65, 6.1, 2.55), P(4.65, 6.35, 2.4)] },
+    { id: "l3", jenis: "listrik", label: "Lampu kamar 1", pts: [P(5.5, 5.93, 0.12, true), P(3, 5.93, 0.12, true), P(3, 4.5, 0.12, true), P(1.5, 4.5, 0.12, true), P(1.5, 4.5, -0.01, true)] },
+    { id: "l4", jenis: "listrik", label: "Lampu kamar 2", pts: [P(3, 4.5, 0.12, true), P(3, 1.5, 0.12, true), P(1.5, 1.5, 0.12, true), P(1.5, 1.5, -0.01, true)] },
+    { id: "l5", jenis: "listrik", label: "Lampu dapur", pts: [P(5.5, 5.93, 0.12, true), P(5.5, 3, 0.12, true), P(5.25, 3, 0.12, true), P(5.25, 0.75, 0.12, true), P(5.25, 0.75, -0.01, true)] },
+    { id: "l6", jenis: "listrik", label: "Lampu KM", pts: [P(5.25, 0.75, 0.12, true), P(3.75, 0.75, 0.12, true), P(3.75, 0.75, -0.01, true)] },
+    {
+      id: "l7",
+      jenis: "listrik",
+      label: "Lampu belakang",
+      pts: [P(5.25, 0.75, 0.12, true), P(5.6, 0.75, 0.12, true), P(5.6, 0.12, 0.12, true), P(5.6, 0.12, 2.55), P(5.3, -0.35, 2.4)],
+    },
+    { id: "s1r", jenis: "listrik", label: "Saklar keluarga", pts: [P(5.5, 5.93, 0.12, true), P(5.3, 5.93, 0.12, true), P(5.3, 5.93, H_SAKLAR)] },
+    { id: "s2r", jenis: "listrik", label: "Saklar kamar 1", pts: [P(3, 4.5, 0.12, true), P(3, 4.35, 0.12, true), P(2.9, 4.35, H_SAKLAR)] },
+    { id: "s3r", jenis: "listrik", label: "Saklar kamar 2", pts: [P(3, 1.5, 0.12, true), P(3, 1.05, 0.12, true), P(2.9, 1.05, H_SAKLAR)] },
+    { id: "s4r", jenis: "listrik", label: "Saklar KM", pts: [P(3.75, 0.75, 0.12, true), P(3.75, 1.3, 0.12, true), P(4.42, 1.3, 0.12, true), P(4.42, 1.3, H_SAKLAR)] },
+    { id: "s5r", jenis: "listrik", label: "Saklar dapur", pts: [P(5.25, 0.75, 0.12, true), P(5.6, 0.75, 0.12, true), P(5.6, 0.12, 0.12, true), P(5.6, 0.12, H_SAKLAR)] },
+    { id: "k1", jenis: "listrik", sirkuit: "kontak", label: "SK kamar 1", pts: [P(1.5, 4.5, 0.12, true), P(0.12, 4.5, 0.12, true), P(0.12, 3.5, 0.12, true), P(0.12, 3.5, H_KONTAK)] },
+    { id: "k2", jenis: "listrik", sirkuit: "kontak", label: "SK kamar 1 (b)", pts: [P(3, 5.93, 0.12, true), P(3, 5.5, 0.12, true), P(2.9, 5.5, H_KONTAK)] },
+    { id: "k3", jenis: "listrik", sirkuit: "kontak", label: "SK kamar 2", pts: [P(1.5, 1.5, 0.12, true), P(0.12, 1.5, 0.12, true), P(0.12, 1.3, 0.12, true), P(0.12, 1.3, H_KONTAK)] },
+    { id: "k4", jenis: "listrik", sirkuit: "kontak", label: "SK kamar 2 (b)", pts: [P(3, 1.5, 0.12, true), P(3, 2.2, 0.12, true), P(2.9, 2.2, H_KONTAK)] },
+    { id: "k5", jenis: "listrik", sirkuit: "kontak", label: "SK keluarga", pts: [P(5.5, 3, 0.12, true), P(5.88, 3, 0.12, true), P(5.88, 3.5, 0.12, true), P(5.88, 3.5, H_KONTAK)] },
+    { id: "k6", jenis: "listrik", sirkuit: "kontak", label: "SK keluarga (b)", pts: [P(4.5, 3.75, 0.12, true), P(3.1, 3.75, 0.12, true), P(3.1, 2.2, 0.12, true), P(3.1, 2.2, H_KONTAK)] },
+    { id: "k7", jenis: "listrik", sirkuit: "kontak", label: "SK dapur", pts: [P(5.25, 0.75, 0.12, true), P(5.88, 0.75, 0.12, true), P(5.88, 0.75, H_KONTAK)] },
+    { id: "k8", jenis: "listrik", sirkuit: "kontak", label: "SK KM", pts: [P(3.75, 0.75, 0.12, true), P(3.1, 0.75, 0.12, true), P(3.1, 0.3, 0.12, true), P(3.1, 0.3, H_KONTAK)] },
+    { id: "k9", jenis: "listrik", sirkuit: "kontak", label: "SK teras", pts: [P(5.5, 5.93, 0.12, true), P(5.75, 5.95, 0.12, true), P(5.75, 6.08, H_KONTAK)] },
+  ],
+  septic: { x: 5.35, z: -2.4 },
+  resapan: { x: 5.35, z: -3.9 },
+};
+
+/** MEP preset "studio" — KM di pojok kanan-belakang, dapur di sepanjang dinding kanan. */
+const MEP_STUDIO: MepSpec = {
+  points: [
+    { id: "mtr", kind: "meter_air", label: "Meter air + stop kran", x: 5.3, z: -0.75, h: -0.35 },
+    { id: "krn", kind: "kran", label: "Kran dapur (dinding kanan)", x: 5.86, z: 2.6, h: H_KRAN },
+    { id: "shr", kind: "shower", label: "Shower KM", x: 4.72, z: 1.5, h: H_SHOWER },
+    { id: "klt", kind: "kloset", label: "Kloset duduk", x: 5.25, z: 0.42, h: 0 },
+    { id: "drn", kind: "drain", label: "Floor drain KM", x: 4.8, z: 0.35, h: 0.02 },
+    { id: "pnl", kind: "panel", label: "Panel MCB + meteran listrik", x: 3.85, z: 6.1, h: H_PANEL },
+    { id: "l1", kind: "lampu", label: "Lampu studio", x: 2.25, z: 3, h: -0.01, rel: true },
+    { id: "l2", kind: "lampu", label: "Lampu area dapur", x: 5.25, z: 4, h: -0.01, rel: true },
+    { id: "l3", kind: "lampu", label: "Lampu KM", x: 5.25, z: 1, h: -0.01, rel: true },
+    { id: "l4", kind: "lampu", label: "Lampu teras", x: 2.95, z: 6.35, h: 2.4 },
+    { id: "l5", kind: "lampu", label: "Lampu belakang", x: 5.3, z: -0.35, h: 2.4 },
+    { id: "s1", kind: "saklar", label: "Saklar studio + teras", x: 3.75, z: 5.93, h: H_SAKLAR },
+    { id: "s2", kind: "saklar", label: "Saklar KM", x: 4.58, z: 0.65, h: H_SAKLAR },
+    { id: "sk1", kind: "stopkontak", label: "Stop kontak studio", x: 0.12, z: 2.2, h: H_KONTAK },
+    { id: "sk2", kind: "stopkontak", label: "Stop kontak studio (b)", x: 0.12, z: 4.6, h: H_KONTAK },
+    { id: "sk3", kind: "stopkontak", label: "Stop kontak dapur", x: 5.86, z: 4.8, h: H_KONTAK },
+    { id: "sk4", kind: "stopkontak", label: "Stop kontak dapur (b)", x: 5.86, z: 3.3, h: H_KONTAK },
+    { id: "sk5", kind: "stopkontak", label: "Stop kontak KM", x: 4.58, z: 0.35, h: H_KONTAK },
+    { id: "sk6", kind: "stopkontak", label: "Stop kontak teras", x: 2.2, z: 6.08, h: H_KONTAK },
+  ],
+  routes: [
+    { id: "ab1", jenis: "air_bersih", label: "Meter → kran dapur", pts: [P(5.3, -0.75, -0.35), P(5.3, 2.6, Y_BERSIH), P(5.86, 2.6, Y_BERSIH), P(5.86, 2.6, H_KRAN)] },
+    { id: "ab2", jenis: "air_bersih", label: "Bawah lantai → KM", pts: [P(5.3, 0.2, Y_BERSIH), P(4.72, 0.2, Y_BERSIH), P(4.72, 1.5, Y_BERSIH), P(4.72, 1.5, H_SHOWER)] },
+    { id: "ab3", jenis: "air_bersih", label: "Cabang kloset", pts: [P(4.72, 0.2, Y_BERSIH), P(5.25, 0.42, Y_BERSIH), P(5.25, 0.42, 0.2)] },
+    {
+      id: "ak1",
+      jenis: "air_kotor",
+      label: "Kloset → septic",
+      pts: [P(5.25, 0.42, 0.2), P(5.25, 0.42, Y_KOTOR), P(5.25, 0, -0.58), P(5.25, -0.9, -0.62), P(5.25, -1.55, -0.66), P(5.25, -1.55, -0.4)],
+    },
+    { id: "ak2", jenis: "air_kotor", label: "Sink → utama", pts: [P(5.86, 2.6, 0.35), P(5.86, 2.6, -0.45), P(5.86, 0.42, -0.5), P(5.25, 0.42, Y_KOTOR)] },
+    { id: "ak3", jenis: "air_kotor", label: "Shower → utama", pts: [P(4.72, 1.5, 0.02), P(4.72, 1.5, -0.48), P(4.72, 0.42, -0.52), P(5.25, 0.42, Y_KOTOR)] },
+    { id: "ak4", jenis: "air_kotor", label: "Floor drain → utama", pts: [P(4.8, 0.35, 0.02), P(4.8, 0.35, -0.44), P(5.25, 0.42, -0.48)] },
+    { id: "ak5", jenis: "air_kotor", label: "Septic → resapan", pts: [P(5.25, -3.1, -1.1), P(5.25, -3.9, -1.1), P(5.25, -3.9, -0.55)] },
+    { id: "l0", jenis: "listrik", label: "Panel → plafon", pts: [P(3.85, 6.1, H_PANEL), P(3.8, 5.93, H_PANEL), P(3.8, 5.93, 0.12, true)] },
+    { id: "l1", jenis: "listrik", label: "Lampu studio", pts: [P(3.8, 5.93, 0.12, true), P(2.25, 5.93, 0.12, true), P(2.25, 3, 0.12, true), P(2.25, 3, -0.01, true)] },
+    { id: "l2", jenis: "listrik", label: "Lampu dapur", pts: [P(3.8, 5.93, 0.12, true), P(3.8, 4, 0.12, true), P(5.25, 4, 0.12, true), P(5.25, 4, -0.01, true)] },
+    { id: "l3", jenis: "listrik", label: "Lampu KM", pts: [P(5.25, 4, 0.12, true), P(5.25, 1, 0.12, true), P(5.25, 1, -0.01, true)] },
+    { id: "l4", jenis: "listrik", label: "Lampu teras", pts: [P(3.8, 5.93, 0.12, true), P(2.95, 5.93, 0.12, true), P(2.95, 6.1, 2.55), P(2.95, 6.35, 2.4)] },
+    { id: "l5", jenis: "listrik", label: "Lampu belakang", pts: [P(5.25, 1, 0.12, true), P(5.6, 0.12, 0.12, true), P(5.6, 0, 2.55), P(5.3, -0.35, 2.4)] },
+    { id: "s1r", jenis: "listrik", label: "Saklar studio", pts: [P(3.8, 5.93, 0.12, true), P(3.75, 5.93, 0.12, true), P(3.75, 5.93, H_SAKLAR)] },
+    { id: "s2r", jenis: "listrik", label: "Saklar KM", pts: [P(5.25, 1, 0.12, true), P(5.25, 0.65, 0.12, true), P(4.58, 0.65, 0.12, true), P(4.58, 0.65, H_SAKLAR)] },
+    { id: "k1", jenis: "listrik", sirkuit: "kontak", label: "SK studio", pts: [P(2.25, 3, 0.12, true), P(0.12, 3, 0.12, true), P(0.12, 2.2, 0.12, true), P(0.12, 2.2, H_KONTAK)] },
+    { id: "k2", jenis: "listrik", sirkuit: "kontak", label: "SK studio (b)", pts: [P(2.25, 4.6, 0.12, true), P(0.12, 4.6, 0.12, true), P(0.12, 4.6, H_KONTAK)] },
+    { id: "k3", jenis: "listrik", sirkuit: "kontak", label: "SK dapur", pts: [P(5.25, 4, 0.12, true), P(5.86, 4.8, 0.12, true), P(5.86, 4.8, H_KONTAK)] },
+    { id: "k4", jenis: "listrik", sirkuit: "kontak", label: "SK dapur (b)", pts: [P(5.25, 4, 0.12, true), P(5.86, 3.3, 0.12, true), P(5.86, 3.3, H_KONTAK)] },
+    { id: "k5", jenis: "listrik", sirkuit: "kontak", label: "SK KM", pts: [P(5.25, 1, 0.12, true), P(5.25, 0.35, 0.12, true), P(4.58, 0.35, 0.12, true), P(4.58, 0.35, H_KONTAK)] },
+    { id: "k6", jenis: "listrik", sirkuit: "kontak", label: "SK teras", pts: [P(3.8, 5.93, 0.12, true), P(2.2, 5.95, 0.12, true), P(2.2, 6.08, H_KONTAK)] },
+  ],
+  septic: { x: 5.25, z: -2.4 },
+  resapan: { x: 5.25, z: -3.9 },
+};
 
 // ---------------------------------------------------------------- presets --
 
@@ -388,6 +588,87 @@ function resolveVent(
 
 // ----------------------------------------------------------------- engine --
 
+export interface MepRouteRT {
+  id: string;
+  jenis: MepJenis;
+  label: string;
+  sirkuit: "lampu" | "kontak" | null;
+  pts: { x: number; y: number; z: number }[]; // y = ketinggian mutlak (m)
+  len: number; // panjang polyline (m)
+}
+
+export interface MepPointRT {
+  id: string;
+  kind: MepKind;
+  label: string;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Instalasi teresolusi: panjang jalur, jumlah titik, posisi 3D (untuk scene & RAB). */
+export interface MepRT {
+  airBersihM: number; // pipa 1/2" + cabang
+  airKotorM: number; // pipa 3" ke septic
+  conduitM: number; // conduit PVC 20 mm
+  kabelLampuM: number; // circuit lampu (NYM 2x1,5)
+  kabelKontakM: number; // circuit stop kontak (NYM 2x2,5)
+  titikLampu: number;
+  saklar: number;
+  stopkontak: number;
+  kloset: number;
+  shower: number;
+  kran: number;
+  drain: number;
+  routes: MepRouteRT[];
+  points: MepPointRT[];
+  septic: { x: number; z: number };
+  resapan: { x: number; z: number };
+}
+
+function polylineLen(pts: { x: number; y: number; z: number }[]): number {
+  let L = 0;
+  for (let i = 1; i < pts.length; i++) {
+    L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+  }
+  return L;
+}
+
+function buildMepRT(spec: MepSpec, tinggi: number): MepRT {
+  const routes: MepRouteRT[] = spec.routes.map((r) => {
+    const pts = r.pts.map((p) => ({ x: p.x, y: p.rel ? tinggi + p.h : p.h, z: p.z }));
+    return { id: r.id, jenis: r.jenis, label: r.label, sirkuit: r.sirkuit ?? null, pts, len: polylineLen(pts) };
+  });
+  const points: MepPointRT[] = spec.points.map((p) => ({
+    id: p.id,
+    kind: p.kind,
+    label: p.label,
+    x: p.x,
+    y: p.rel ? tinggi + p.h : p.h,
+    z: p.z,
+  }));
+  const byJenis = (j: MepJenis) => routes.filter((r) => r.jenis === j).reduce((s, r) => s + r.len, 0);
+  const cnt = (k: MepKind) => points.filter((p) => p.kind === k).length;
+  return {
+    airBersihM: byJenis("air_bersih"),
+    airKotorM: byJenis("air_kotor"),
+    conduitM: byJenis("listrik"),
+    kabelLampuM: routes.filter((r) => r.jenis === "listrik" && r.sirkuit !== "kontak").reduce((s, r) => s + r.len, 0),
+    kabelKontakM: routes.filter((r) => r.jenis === "listrik" && r.sirkuit === "kontak").reduce((s, r) => s + r.len, 0),
+    titikLampu: cnt("lampu"),
+    saklar: cnt("saklar"),
+    stopkontak: cnt("stopkontak"),
+    kloset: cnt("kloset"),
+    shower: cnt("shower"),
+    kran: cnt("kran"),
+    drain: cnt("drain"),
+    routes,
+    points,
+    septic: spec.septic,
+    resapan: spec.resapan,
+  };
+}
+
 export interface HouseModel {
   config: HouseConfig;
   walls: WallRT[];
@@ -434,6 +715,7 @@ export interface HouseModel {
   };
   wallLenTotal: number;
   koloms: KolomRT[];
+  mep: MepRT;
   structure: {
     galianM3: number;
     uruganPasirM3: number;
@@ -750,6 +1032,7 @@ export function buildModel(config: HouseConfig): HouseModel {
     roof: { areaM2: roofArea, apexAdd, overhang: ov, deg: config.atapDeg, pitch, yRidge, kudaKuda, rengPerSlope, gentengPcs },
     wallLenTotal,
     koloms,
+    mep: buildMepRT(preset.mep, config.tinggi),
     structure: { galianM3, uruganPasirM3, pondasiM3, sloofM3, kolomM3, ringbalkM3, lisplankM, talangM, cakar },
   };
 }
