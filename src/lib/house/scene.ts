@@ -6,6 +6,12 @@
  * label ruangan, potongan (clipping), mode bongkar (explode), dan SIMULASI
  * KONSTRUKSI BERTAHAP (stage 1..8: pondasi -> sloof -> dinding -> pelana ->
  * rangka atap -> genteng -> plester -> cat).
+ * INSTALASI AIR & LISTRIK (MEP): pipa air bersih PVC 1/2" (biru), limbah 3"
+ * (hijau-teal), conduit + kabel listrik (kuning sirkuit lampu / merah sirkuit
+ * stop kontak), titik lampu/saklar/stop kontak/panel MCB/meteran air, septic
+ * tank + sumur resapan — digambar sebagai OVERLAY SINAR-X (depthTest dimatikan)
+ * sehingga jalur yang tertanam di dinding, bawah lantai & bawah tanah tetap
+ * terbaca, seperti denah instalasi pada bangunan existing.
  * Denah memakai (x, y) meter -> three: X = x, Z = y, Y = ketinggian.
  * Ridge atap memanjang sepanjang sumbu Z (dinding ujung pelana = depan/belakang).
  */
@@ -20,6 +26,8 @@ export interface ViewState {
   showDinding: boolean; // pasangan bata + plester terlihat (mode bebas)
   showLabels: boolean;
   showFinishing: boolean; // plester + cat di mode bebas (stage 0)
+  showAir: boolean; // jalur pipa air bersih & limbah (overlay sinar-X)
+  showListrik: boolean; // jalur listrik: conduit + titik lampu/saklar/stop kontak
   explode: number; // 0..1
   cutH: number; // ketinggian potongan (m); >= 1000 = tidak dipotong
   stage: number; // 0 = kendali bebas (flag manual); 1..8 = tahapan konstruksi
@@ -125,6 +133,22 @@ export class HouseScene {
   private matGround = new THREE.MeshStandardMaterial({ color: 0x5a634e, roughness: 1, transparent: true, opacity: 1 });
   private matPlot = new THREE.MeshStandardMaterial({ color: 0x77855d, roughness: 1, transparent: true, opacity: 1 });
 
+  // --- MEP (instalasi air & listrik): overlay sinar-X, depthTest dimatikan agar
+  // pipa tertanam di dinding/lantai/tanah tetap terbaca (tidak terpotong clipping) ---
+  private mepGroup: THREE.Group = new THREE.Group();
+  private matPipeBersih = new THREE.MeshStandardMaterial({ color: 0x4c9ee8, roughness: 0.4, transparent: true, opacity: 0.92, depthTest: false });
+  private matPipeKotor = new THREE.MeshStandardMaterial({ color: 0x4f9d8d, roughness: 0.4, transparent: true, opacity: 0.92, depthTest: false });
+  private matKabelLampu = new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.45, transparent: true, opacity: 0.92, depthTest: false });
+  private matKabelKontak = new THREE.MeshStandardMaterial({ color: 0xe05b4d, roughness: 0.45, transparent: true, opacity: 0.92, depthTest: false });
+  private matMepLampu = new THREE.MeshStandardMaterial({ color: 0xf7d774, emissive: 0x7a5c12, emissiveIntensity: 0.55, roughness: 0.5, transparent: true, opacity: 0.95, depthTest: false });
+  private matMepPlate = new THREE.MeshStandardMaterial({ color: 0xf0ead9, roughness: 0.6, transparent: true, opacity: 0.95, depthTest: false });
+  private matMepPanel = new THREE.MeshStandardMaterial({ color: 0xd6dade, roughness: 0.5, transparent: true, opacity: 0.95, depthTest: false });
+  private matMepAir = new THREE.MeshStandardMaterial({ color: 0x4c9ee8, roughness: 0.45, transparent: true, opacity: 0.95, depthTest: false });
+  private matMepKloset = new THREE.MeshStandardMaterial({ color: 0xf5f5f2, roughness: 0.35, transparent: true, opacity: 0.95, depthTest: false });
+  private matMepDrain = new THREE.MeshStandardMaterial({ color: 0x9aa8b2, roughness: 0.5, transparent: true, opacity: 0.95, depthTest: false });
+  private matSeptic = new THREE.MeshStandardMaterial({ color: 0x9aa8b2, roughness: 0.7, transparent: true, opacity: 0.55, depthTest: false });
+  private matResapan = new THREE.MeshStandardMaterial({ color: 0x8a7f6a, roughness: 0.9, transparent: true, opacity: 0.55, depthTest: false });
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -208,6 +232,7 @@ export class HouseScene {
     this.roofGroup.add(this.trussGroup);
     this.scene.add(this.labelGroup);
     this.scene.add(this.dimsGroup);
+    this.scene.add(this.mepGroup);
 
     this.initOrbit();
     this.ro = new ResizeObserver(() => this.resize());
@@ -383,6 +408,7 @@ export class HouseScene {
     this.clearGroup(this.tilesGroup);
     this.clearGroup(this.trussGroup);
     this.clearGroup(this.labelGroup);
+    this.clearGroup(this.mepGroup);
 
     // potongan
     this.clipPlane.constant = view.cutH;
@@ -451,6 +477,14 @@ export class HouseScene {
 
     // atap + plafon
     this.buildRoof(model, V);
+
+    // ----- instalasi air & listrik (overlay sinar-X).
+    // Mode bebas: mengikuti flag Outliner/viewport. Mode tahapan: jalur rough-in
+    // terlihat pada tahap 5-6 (dinding sudah berdiri, sebelum plesteran menutup
+    // jalur tertanam) — urutan praktik: instalasi ditarik paralel dengan pekerjaan atap.
+    const mepAirOn = manual ? view.showAir : s === 5 || s === 6;
+    const mepListrikOn = manual ? view.showListrik : s === 5 || s === 6;
+    this.buildMep(model, mepAirOn, mepListrikOn);
 
     // label ruangan
     if (view.showLabels) {
@@ -861,6 +895,215 @@ export class HouseScene {
     }
   }
 
+  // ------------------------------------------------------- instalasi MEP --
+
+  /**
+   * Instalasi air & listrik (MEP) sebagai overlay sinar-X:
+   * - air bersih PVC AW 1/2" biru (Ø visual = Ø asli 21 mm)
+   * - limbah PVC 3" hijau-teal (Ø 89 mm)
+   * - conduit Ø20 mm kuning (sirkuit lampu, NYM 2x1,5) / merah (stop kontak, 2x2,5)
+   * - titik: lampu (bola kuning emissive), saklar & stop kontak (piring krem),
+   *   panel MCB, meteran air, kran, shower, kloset, floor drain
+   * - septic tank + sumur resapan di belakang rumah (bawah tanah, tembus pandang)
+   */
+  private buildMep(model: HouseModel, air: boolean, listrik: boolean) {
+    if (!air && !listrik) return;
+    const m = model.mep;
+
+    // Ø visual pipa (meter): 1/2" = 0,021 m; 3" = 0,045 m; conduit 20 mm = 0,015 m
+    const R_BERSIH = 0.021;
+    const R_KOTOR = 0.045;
+    const R_CONDUIT = 0.015;
+
+    // sambungan siku diberi bola agar pertemuan pipa rapat (bukan celah flat-cap)
+    const joint = (p: { x: number; y: number; z: number }, r: number, mat: THREE.Material) =>
+      this.addMepSphere(p.x, p.y, p.z, r, mat);
+
+    for (const r of m.routes) {
+      const isAir = r.jenis !== "listrik";
+      if (isAir && !air) continue;
+      if (!isAir && !listrik) continue;
+      const mat =
+        r.jenis === "air_bersih"
+          ? this.matPipeBersih
+          : r.jenis === "air_kotor"
+            ? this.matPipeKotor
+            : r.sirkuit === "kontak"
+              ? this.matKabelKontak
+              : this.matKabelLampu;
+      const rad = r.jenis === "air_bersih" ? R_BERSIH : r.jenis === "air_kotor" ? R_KOTOR : R_CONDUIT;
+      for (let i = 1; i < r.pts.length; i++) {
+        this.addPipe(r.pts[i - 1], r.pts[i], rad, mat);
+      }
+      for (let i = 1; i < r.pts.length - 1; i++) joint(r.pts[i], rad, mat);
+    }
+
+    // orientasi piring saklar/stop kontak: tipis mengikuti dinding terdekat
+    const thinZ = (p: { x: number; z: number }) => {
+      let best: "h" | "v" = "h";
+      let bd = Infinity;
+      for (const w of model.walls) {
+        const d = w.axis === "h" ? Math.abs(p.z - w.c) : Math.abs(p.x - w.c);
+        if (d < bd) {
+          bd = d;
+          best = w.axis;
+        }
+      }
+      return best === "h";
+    };
+
+    for (const p of m.points) {
+      const isAirPt = p.kind === "meter_air" || p.kind === "kran" || p.kind === "shower" || p.kind === "kloset" || p.kind === "drain";
+      if (isAirPt && !air) continue;
+      if (!isAirPt && !listrik) continue;
+      switch (p.kind) {
+        case "lampu":
+          this.addMepSphere(p.x, p.y, p.z, 0.06, this.matMepLampu);
+          break;
+        case "saklar":
+          if (thinZ(p)) this.addMepBox(p.x, p.y, p.z, 0.09, 0.12, 0.028, this.matMepPlate);
+          else this.addMepBox(p.x, p.y, p.z, 0.028, 0.12, 0.09, this.matMepPlate);
+          break;
+        case "stopkontak":
+          if (thinZ(p)) this.addMepBox(p.x, p.y, p.z, 0.09, 0.09, 0.028, this.matMepPlate);
+          else this.addMepBox(p.x, p.y, p.z, 0.028, 0.09, 0.09, this.matMepPlate);
+          break;
+        case "panel": {
+          this.addMepBox(p.x, p.y, p.z, 0.26, 0.34, 0.09, this.matMepPanel);
+          const l = this.makeMepLabel("Panel MCB + meteran", "#f2c14e");
+          l.position.set(p.x, p.y + 0.3, p.z);
+          this.mepGroup.add(l);
+          break;
+        }
+        case "meter_air": {
+          this.addMepBox(p.x, p.y, p.z, 0.18, 0.18, 0.1, this.matMepAir);
+          const l = this.makeMepLabel("Meter air + stop kran", "#4c9ee8");
+          l.position.set(p.x, 0.35, p.z);
+          this.mepGroup.add(l);
+          break;
+        }
+        case "kran":
+          this.addMepBox(p.x, p.y, p.z, 0.05, 0.16, 0.05, this.matMepAir);
+          break;
+        case "shower": {
+          // lengan shower mendatar + muka pancuran di ketinggian 2,05 m
+          this.addMepBox(p.x, p.y, p.z, 0.22, 0.045, 0.045, this.matMepAir);
+          const g = new THREE.CylinderGeometry(0.07, 0.07, 0.02, 16);
+          const head = new THREE.Mesh(g, this.matMepAir);
+          head.position.set(p.x, p.y - 0.03, p.z);
+          head.renderOrder = 830;
+          this.mepGroup.add(head);
+          this.dyn.push(g);
+          break;
+        }
+        case "kloset": {
+          // kloset duduk sederhana: mangkuk + tangki menghadap dinding belakang
+          this.addMepBox(p.x, 0.19, p.z + 0.08, 0.36, 0.38, 0.5, this.matMepKloset);
+          this.addMepBox(p.x, 0.25, p.z - 0.2, 0.36, 0.5, 0.16, this.matMepKloset);
+          break;
+        }
+        case "drain":
+          this.addMepCyl(p.x, p.y, p.z, 0.05, 0.014, this.matMepDrain);
+          break;
+      }
+    }
+
+    if (air) {
+      // septic tank (kotak beton 1,2 x 1,6 m) + sumur resapan (Ø1,1 m) di belakang
+      const s = m.septic;
+      this.addMepBox(s.x, -0.8, s.z, 1.2, 0.9, 1.6, this.matSeptic);
+      const ls = this.makeMepLabel("Septic tank", "#4f9d8d");
+      ls.position.set(s.x, 0.1, s.z);
+      this.mepGroup.add(ls);
+      const r = m.resapan;
+      const g = new THREE.CylinderGeometry(0.55, 0.55, 0.8, 24);
+      const rp = new THREE.Mesh(g, this.matResapan);
+      rp.position.set(r.x, -0.75, r.z);
+      rp.renderOrder = 830;
+      this.mepGroup.add(rp);
+      this.dyn.push(g);
+      const lr = this.makeMepLabel("Sumur resapan", "#8a7f6a");
+      lr.position.set(r.x, 0.1, r.z);
+      this.mepGroup.add(lr);
+    }
+  }
+
+  /** Segmen pipa silinder antara dua titik jalur (overlay sinar-X). */
+  private addPipe(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, radius: number, mat: THREE.Material) {
+    const va = new THREE.Vector3(a.x, a.y, a.z);
+    const vb = new THREE.Vector3(b.x, b.y, b.z);
+    const dir = new THREE.Vector3().subVectors(vb, va);
+    const len = dir.length();
+    if (len < 0.015) return;
+    const geo = new THREE.CylinderGeometry(radius, radius, len, 10);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(va).lerp(vb, 0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    mesh.renderOrder = 820;
+    this.mepGroup.add(mesh);
+    this.dyn.push(geo);
+  }
+
+  private addMepBox(x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material) {
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.position.set(x, y, z);
+    mesh.renderOrder = 830;
+    this.mepGroup.add(mesh);
+    this.dyn.push(g);
+    return mesh;
+  }
+
+  private addMepSphere(x: number, y: number, z: number, r: number, mat: THREE.Material) {
+    const g = new THREE.SphereGeometry(r, 14, 10);
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.position.set(x, y, z);
+    mesh.renderOrder = 830;
+    this.mepGroup.add(mesh);
+    this.dyn.push(g);
+    return mesh;
+  }
+
+  private addMepCyl(x: number, y: number, z: number, r: number, h: number, mat: THREE.Material) {
+    const g = new THREE.CylinderGeometry(r, r, h, 16);
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.position.set(x, y, z);
+    mesh.renderOrder = 830;
+    this.mepGroup.add(mesh);
+    this.dyn.push(g);
+    return mesh;
+  }
+
+  /** Label kecil ala chip studio untuk titik MEP penting (selalu terlihat). */
+  private makeMepLabel(text: string, accent: string): THREE.Sprite {
+    const cv = document.createElement("canvas");
+    cv.width = 320;
+    cv.height = 76;
+    const ctx = cv.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "rgba(20, 22, 25, 0.92)";
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(4, 4, 312, 68, 14);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#eef1f4";
+      ctx.textAlign = "center";
+      ctx.font = "600 34px 'Segoe UI', 'Noto Sans', sans-serif";
+      ctx.fillText(text, 160, 48);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4;
+    this.dyn.push(tex);
+    const sm = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+    this.dyn.push(sm);
+    const sp = new THREE.Sprite(sm);
+    sp.scale.set(0.9, 0.21, 1);
+    sp.renderOrder = 1200;
+    return sp;
+  }
+
   // ---------------------------------------------------------- dimensi 3D --
 
   private rebuildDims() {
@@ -1039,6 +1282,9 @@ export class HouseScene {
       this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
       this.matPlester, this.matCatInt, this.matCatExt, this.matVent,
       this.matVentFrame, this.matPintuGelap, this.matGround, this.matPlot, this.matDim,
+      this.matPipeBersih, this.matPipeKotor, this.matKabelLampu, this.matKabelKontak,
+      this.matMepLampu, this.matMepPlate, this.matMepPanel, this.matMepAir,
+      this.matMepKloset, this.matMepDrain, this.matSeptic, this.matResapan,
     ]) m.dispose();
     this.renderer.dispose();
   }

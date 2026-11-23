@@ -352,6 +352,7 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
       { id: "km", name: "Kamar Mandi", x0: 3, y0: 0, x1: 4.5, y1: 1.5 },
       { id: "dapur", name: "Area Dapur", x0: 4.5, y0: 0, x1: 6, y1: 1.5 },
     ],
+    mep: MEP_2BR,
   },
   {
     id: "studio",
@@ -409,6 +410,7 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
       { id: "studio-b", name: "Ruang Studio (area dapur)", x0: 4.5, y0: 2, x1: 6, y1: 6 },
       { id: "km", name: "Kamar Mandi", x0: 4.5, y0: 0, x1: 6, y1: 2 },
     ],
+    mep: MEP_STUDIO,
   },
 ];
 
@@ -1097,7 +1099,23 @@ export const DEFAULT_PRICES: PriceBook = {
   keramik: 95000,
   pintu: 1200000,
   jendela: 850000,
-  listrikAir: 6000000,
+  // instalasi air & listrik (divisi VIII) — kuantitas dari jalur 3D
+  pipaAirBersih: 28000, // PVC AW 1/2" per meter
+  pipaAirKotor: 95000, // PVC D-3" per meter
+  septicResapan: 3500000, // septic tank + sumur resapan + pasang
+  klosetDuduk: 1200000,
+  showerSet: 650000,
+  kranAir: 75000,
+  floorDrain: 55000,
+  fittingAir: 550000, // elbow, tee, stop kran, lem PVC (lot)
+  conduit: 8500, // pipa conduit PVC Ø20 mm per meter
+  kabelNym15: 18000, // NYM 2x1,5 mm2 per meter
+  kabelNym25: 32000, // NYM 2x2,5 mm2 per meter
+  titikLampu: 90000, // inbow box + piring + armatur kecil
+  saklarInbow: 55000,
+  stopkontakInbow: 65000,
+  panelMcb: 850000, // box MCB 4 grup + MCB + kabel feeder
+  grounding: 350000, // batang tembaga + kabel BC (lot)
   cat: 55000,
   pembersihan: 1000000,
 };
@@ -1180,7 +1198,24 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
   push("pintu", "d7", "Kusen + daun pintu lengkap", "Kusen kayu berprofil + daun panel 2 susun + kunci handle + angkur", model.openings.doors, "unit", false);
   push("jendela", "d7", "Kusen + kaca jendela", "Kusen aluminium profil + kaca 5 mm + palang tengah + roster vent", model.openings.windows, "unit", false);
 
-  push("listrikAir", "d8", "Instalasi listrik & air bersih/limbah", "Titik lampu + stop kontak, MCB, pipa air & kotoran", 1, "borongan", false);
+  // divisi VIII: instalasi air & listrik — kuantitas dihitung dari jalur 3D (model.mep)
+  const mep = model.mep;
+  push("pipaAirBersih", "d8", "Pipa air bersih PVC AW 1/2\"", "Meteran → kran dapur, shower & kloset (jalur di bawah lantai / dalam dinding)", Math.ceil(mep.airBersihM), "m1", true);
+  push("pipaAirKotor", "d8", "Pipa limbah PVC D-3\"", "Kloset, sink, shower & floor drain → septic (kemiringan 1-2%)", Math.ceil(mep.airKotorM), "m1", true);
+  push("septicResapan", "d8", "Septic tank + sumur resapan", `Posisi ${fmtNum(Math.abs(mep.septic.z), 1)} m di belakang rumah (lihat jalur 3D); jarak min 10 m dari sumur air bersih`, 1, "unit", true);
+  push("klosetDuduk", "d8", "Kloset duduk lengkap", "Termasuk angkur & sambungan ke jalur 3/4\"", mep.kloset, "unit", true);
+  push("showerSet", "d8", "Shower set", "Batang shower + kran campur panas-dingin", mep.shower, "set", true);
+  push("kranAir", "d8", "Kran air", "Kran dapur / point pengambilan air", mep.kran, "bh", true);
+  push("floorDrain", "d8", "Floor drain", "Saringan lantai KM (tipe lantai)", mep.drain, "bh", true);
+  push("fittingAir", "d8", "Fitting & aksesoris pipa air", "Elbow, tee, sok, stop kran, lem PVC (estimasi lot)", 1, "lot", false);
+  push("conduit", "d8", "Pipa conduit PVC Ø20 mm", "Jalur tertanam di dinding & drop dari plafon", Math.ceil(mep.conduitM), "m1", true);
+  push("kabelNym15", "d8", "Kabel NYM 2x1,5 mm² (sirkuit lampu)", "Panel → titik lampu & saklar (PUIL 2011)", Math.ceil(mep.kabelLampuM), "m1", true);
+  push("kabelNym25", "d8", "Kabel NYM 2x2,5 mm² (sirkuit stop kontak)", "Panel → titik stop kontak, daya lebih besar", Math.ceil(mep.kabelKontakM), "m1", true);
+  push("titikLampu", "d8", "Titik lampu (inbow + armatur)", "Termasuk box inbow, piring & armatur kecil", mep.titikLampu, "bh", true);
+  push("saklarInbow", "d8", "Saklar tunggal/ganda", "Tinggi pasang 140 cm (PUIL)", mep.saklar, "bh", true);
+  push("stopkontakInbow", "d8", "Stop kontak", "Tinggi pasang 30 cm; KM/WC memakai unit kedap", mep.stopkontak, "bh", true);
+  push("panelMcb", "d8", "Panel MCB + meteran listrik", "Box 4 grup, MCB utama 10 A, kabel feeder — di dinding depan", 1, "unit", true);
+  push("grounding", "d8", "Grounding (arde)", "Batang tembaga 1,5 m + kabel BC ke panel (PUIL)", 1, "lot", false);
 
   push("cat", "d9", "Cat dinding (primer + 2 lapis)", "Di atas luas aci 2 sisi dinding", Math.ceil(model.areas.plasterArea * 10) / 10, "m2", true);
   push("pembersihan", "d9", "Pembersihan akhir & perapihan", "Serah terima pekerjaan", 1, "lot", false);

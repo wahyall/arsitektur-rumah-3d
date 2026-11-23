@@ -14,7 +14,7 @@ import { BookOpenText, FileStack } from "lucide-react";
 type SheetId = "denah" | "tampak" | "samping" | "potongan";
 
 const SHEETS: { id: SheetId; label: string; kode: string; desc: string }[] = [
-  { id: "denah", label: "Denah Lantai 1", kode: "A-01", desc: "Tata ruang, rantai ukuran dua baris, as grid, tag bukaan P/J/LA, penanda potongan A-A" },
+  { id: "denah", label: "Denah Lantai 1", kode: "A-01", desc: "Tata ruang, rantai ukuran dua baris, as grid, tag bukaan P/J/LA, overlay jalur instalasi air & listrik" },
   { id: "tampak", label: "Tampak Depan", kode: "A-02", desc: "Elevasi dinding pelana dengan dimensi tinggi dan label material" },
   { id: "samping", label: "Tampak Samping", kode: "A-03", desc: "Elevasi dinding persegi + bidang atap (edge-on), bukaan dinding kanan" },
   { id: "potongan", label: "Potongan A-A", kode: "A-04", desc: "Potongan melintang: struktur pondasi-sloof-dinding-ring balk-atap dengan balon detail" },
@@ -137,6 +137,12 @@ export function DrawingWorkspace({ model }: { model: HouseModel }) {
               <li>
                 <b className="text-foreground/90">Denah (A-01)</b> — dinding diarsir hitam (poche); kotak kecil = kolom praktis di simpul; garis putus-putus = batas
                 pondasi di bawah dinding; P = pintu, J = jendela, LA = lubang angin (roster); angka bergaris = rantai ukuran (atas: parsial + total).
+              </li>
+              <li>
+                <b className="text-foreground/90">Overlay instalasi (A-01)</b> — garis biru = pipa air bersih PVC 1/2&quot;; hijau putus-putus = pipa limbah 3&quot; di bawah
+                lantai ke arah septic & resapan (panah keluar tepi atas denah); kuning = conduit sirkuit lampu (NYM 2&times;1,5 mm&sup2;), merah = sirkuit stop kontak
+                (2&times;2,5 mm&sup2;); simbol kecil = titik lampu, saklar, stop kontak, MCB panel, meter air, kloset, shower &amp; floor drain — sama dengan jalur yang
+                terlihat pada viewport 3D dan terhitung di RAB divisi VIII.
               </li>
               <li>
                 <b className="text-foreground/90">Tampak (A-02/A-03)</b> — proyeksi ortografis; garis dimensi tinggi di kanan menunjukkan level lantai ±0,00,

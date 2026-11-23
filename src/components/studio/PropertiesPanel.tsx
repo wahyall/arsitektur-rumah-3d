@@ -234,6 +234,26 @@ export function PropertiesPanel({ config, onConfig, onGantiJenis, view, onView, 
               <SwitchRow id="wireframe" label="Wireframe" hint="Lihat kerangka tiap bata & elemen" checked={view.wireframe} onChecked={(v) => onView({ wireframe: v })} />
             </Group>
 
+            <Group title="Instalasi air & listrik (sinar-X)">
+              <SwitchRow
+                id="showAir"
+                label="Jalur pipa air bersih & limbah"
+                hint={`Pipa PVC 1/2" biru + 3" hijau — ${fmtNum(Math.ceil(model.mep.airBersihM + model.mep.airKotorM))} m + septic & resapan`}
+                checked={view.showAir}
+                onChecked={(v) => onView({ showAir: v })}
+              />
+              <SwitchRow
+                id="showListrik"
+                label="Jalur listrik (conduit & kabel)"
+                hint={`${fmtNum(Math.ceil(model.mep.conduitM))} m conduit · NYM 1,5 mm² ${fmtNum(Math.ceil(model.mep.kabelLampuM))} m · 2,5 mm² ${fmtNum(Math.ceil(model.mep.kabelKontakM))} m`}
+                checked={view.showListrik}
+                onChecked={(v) => onView({ showListrik: v })}
+              />
+              <p className="rounded-sm border bg-muted/40 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                Titik instalasi: {fmtNum(model.mep.titikLampu)} lampu · {fmtNum(model.mep.saklar)} saklar · {fmtNum(model.mep.stopkontak)} stop kontak · 1 panel MCB · 1 meteran air · {fmtNum(model.mep.kloset)} kloset · {fmtNum(model.mep.shower)} shower · {fmtNum(model.mep.kran)} kran · {fmtNum(model.mep.drain)} floor drain. Jalur digambar menembus dinding/lantai (instalasi tersembunyi) — pada mode tahapan terlihat di tahap 5-6 (rough-in sebelum plester).
+              </p>
+            </Group>
+
             <Group title="Lapisan bangunan">
               <SwitchRow id="showDinding" label="Pasangan dinding bata" checked={view.showDinding} onChecked={(v) => onView({ showDinding: v })} />
               <SwitchRow id="showStruktur" label="Sloof, kolom & ring balk" checked={view.showStruktur} onChecked={(v) => onView({ showStruktur: v })} />

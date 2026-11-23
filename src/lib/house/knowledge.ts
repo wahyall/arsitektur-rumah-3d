@@ -301,6 +301,7 @@ export const DETAIL_ELEMEN: DetailElemen[] = [
       "Listrik sesuai PUIL: MCB utama 10-16 A, kabel 1,5 mm2 lampu / 2,5 mm2 stop kontak, grounding ke batang tembaga.",
       "Banyak titik stop kontak diantisipasi sejak conduit (min 2 titik per ruang + luar).",
       "Semua pipa & kabel dites sebelum ditutup plester (uji tekanan air, uji isolasi/Continuity).",
+      "Seluruh jalur & titik pada model ini dimasukkan otomatis ke RAB divisi VIII (Instalasi Listrik & Air): panjang pipa/conduit/kabel dihitung dari polyline 3D, jumlah titik dari denah sanitasi.",
     ],
   },
 ];
@@ -397,7 +398,7 @@ export const CONSTRUCTION_STAGES: ConstructionStage[] = [
     nama: "Rangka atap",
     durasi: TAHAPAN_PEKERJAAN[5].durasi,
     deskripsi:
-      "Kuda-kuda baja ringan C75 lengkap dengan web pengaku, reng, dan lisplank dipasang di atas ring balk — sebelum penutup atap, struktur rangka terlihat penuh dari bawah.",
+      "Kuda-kuda baja ringan C75 lengkap dengan web pengaku, reng, dan lisplank dipasang di atas ring balk — sebelum penutup atap, struktur rangka terlihat penuh dari bawah. Bersamaan (paralel), jalur instalasi air & listrik (rough-in) mulai ditarik: pipa air bersih/limbah biru-hijau di bawah lantai, conduit & kabel kuning/merah di dinding dan rongga plafon — sebelum plesteran menutupnya.",
     cek: TAHAPAN_PEKERJAAN[5].cekMutu,
   },
   {
@@ -405,7 +406,7 @@ export const CONSTRUCTION_STAGES: ConstructionStage[] = [
     nama: "Genteng & plafon",
     durasi: TAHAPAN_PEKERJAAN[5].durasi,
     deskripsi:
-      "Genteng beton flat dipasang di atas reng lengkap dengan nok di puncak, overstek melindungi dinding, plafon gypsum dipasang di bawah rangka, talang di kedua eaves.",
+      "Genteng beton flat dipasang di atas reng lengkap dengan nok di puncak, overstek melindungi dinding, plafon gypsum dipasang di bawah rangka, talang di kedua eaves. Jalur instalasi (rough-in) masih terlihat sebagai overlay — uji tekanan pipa & continuity kabel dilakukan sebelum ditutup plesteran pada tahap berikutnya.",
     cek: TAHAPAN_PEKERJAAN[5].cekMutu,
   },
   {

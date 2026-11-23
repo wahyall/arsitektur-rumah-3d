@@ -5,6 +5,7 @@ import { fmtNum } from "@/lib/house/engine";
 import type { StudioView } from "@/lib/house/studio";
 import { cn } from "@/lib/utils";
 import {
+  Cable,
   ChevronRight,
   Eye,
   EyeOff,
@@ -64,6 +65,21 @@ export function Outliner({ view, onView, model }: Props) {
     { id: "fin", label: "Finishing", icon: PaintBucket, indent: 1 },
     { id: "plester", label: "Plesteran & acian", eyeKey: "showFinishing", note: `${fmtNum(model.areas.plasterArea, 1)} m2`, indent: 2 },
     { id: "cat", label: "Cat eksterior", eyeKey: "showFinishing", note: "primer + 2 lapis", indent: 2 },
+    { id: "inst", label: "Instalasi air & listrik", icon: Cable, indent: 1 },
+    {
+      id: "instAir",
+      label: "Jalur pipa air bersih & limbah",
+      eyeKey: "showAir",
+      note: `${fmtNum(Math.ceil(model.mep.airBersihM + model.mep.airKotorM))} m pipa + septic`,
+      indent: 2,
+    },
+    {
+      id: "instListrik",
+      label: "Jalur listrik (conduit + kabel)",
+      eyeKey: "showListrik",
+      note: `${fmtNum(Math.ceil(model.mep.conduitM))} m · ${fmtNum(model.mep.titikLampu + model.mep.saklar + model.mep.stopkontak)} titik`,
+      indent: 2,
+    },
     { id: "anot", label: "Anotasi gambar", icon: Ruler, indent: 1 },
     { id: "label", label: "Label ruangan", eyeKey: "showLabels", indent: 2 },
     { id: "dims", label: "Dimensi ukuran", eyeKey: "dims", indent: 2 },

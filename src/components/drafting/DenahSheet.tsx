@@ -209,6 +209,86 @@ export function DenahSheet({ model }: { model: HouseModel }) {
           }),
       )}
 
+      {/* ---------- overlay jalur instalasi air & listrik (MEP) ----------
+          Konvensi denah instalasi: air bersih = garis biru menerus; limbah =
+          hijau putus-putus (tertanam bawah lantai, kemiringan ke septic);
+          listrik = kuning (sirkuit lampu) / merah (sirkuit stop kontak),
+          semua mengikuti polyline jalur 3D pada model. Jalur ke septic &
+          resapan berlanjut keluar lembar (arah atas denah = belakang rumah). */}
+      <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+        {model.mep.routes.map((r) => {
+          const stroke =
+            r.jenis === "air_bersih" ? "#2f6db3" : r.jenis === "air_kotor" ? "#2e7d6d" : r.sirkuit === "kontak" ? "#b03a2e" : "#a3740a";
+          return (
+            <polyline
+              key={`mep-${r.id}`}
+              points={r.pts.map((p) => `${px(p.x)},${py(p.z)}`).join(" ")}
+              stroke={stroke}
+              strokeWidth={r.jenis === "air_kotor" ? 1.7 : 1.2}
+              strokeDasharray={r.jenis === "air_kotor" ? "7 3.5" : r.jenis === "listrik" ? "5 3" : undefined}
+              opacity={0.92}
+            />
+          );
+        })}
+      </g>
+      {model.mep.points.map((p) => {
+        const cx = px(p.x);
+        const cy = py(p.z);
+        switch (p.kind) {
+          case "lampu":
+            return <circle key={`pt-${p.id}`} cx={cx} cy={cy} r={3.4} fill="#f7d774" stroke="#a3740a" strokeWidth={0.9} />;
+          case "saklar":
+            return <rect key={`pt-${p.id}`} x={cx - 2.6} y={cy - 2.6} width={5.2} height={5.2} fill="#fdfaf0" stroke="#a3740a" strokeWidth={0.9} />;
+          case "stopkontak":
+            return (
+              <g key={`pt-${p.id}`}>
+                <circle cx={cx} cy={cy} r={3.2} fill="#ffffff" stroke="#b03a2e" strokeWidth={1.1} />
+                <circle cx={cx} cy={cy} r={1} fill="#b03a2e" />
+              </g>
+            );
+          case "panel":
+            return (
+              <g key={`pt-${p.id}`}>
+                <rect x={cx - 5.5} y={cy - 6.5} width={11} height={13} fill="#d6dade" stroke="#4b4f54" strokeWidth={0.9} />
+                <text x={cx} y={cy + 14} textAnchor="middle" fontSize={6.5} fontWeight={700} fill="#4b4f54" stroke="none">
+                  MCB
+                </text>
+              </g>
+            );
+          case "meter_air":
+            return (
+              <g key={`pt-${p.id}`}>
+                <rect x={cx - 4} y={cy - 4} width={8} height={8} fill="#d9ecff" stroke="#2f6db3" strokeWidth={0.9} />
+                <text x={cx} y={cy + 13} textAnchor="middle" fontSize={6.5} fontWeight={700} fill="#2f6db3" stroke="none">
+                  MTR
+                </text>
+              </g>
+            );
+          case "kran":
+            return <circle key={`pt-${p.id}`} cx={cx} cy={cy} r={2.4} fill="#2f6db3" />;
+          case "shower":
+            return (
+              <g key={`pt-${p.id}`}>
+                <circle cx={cx} cy={cy} r={3.6} stroke="#2f6db3" strokeWidth={1} />
+                <circle cx={cx} cy={cy} r={1.1} fill="#2f6db3" />
+              </g>
+            );
+          case "kloset":
+            return (
+              <g key={`pt-${p.id}`}>
+                <rect x={cx - 8} y={cy - 10} width={16} height={20} rx={4} fill="#eef6ff" stroke="#2f6db3" strokeWidth={0.9} />
+                <rect x={cx - 8} y={cy - 10} width={16} height={5} fill="#cfe4f5" stroke="#2f6db3" strokeWidth={0.7} />
+              </g>
+            );
+          case "drain":
+            return <circle key={`pt-${p.id}`} cx={cx} cy={cy} r={2.6} fill="#2e7d6d" />;
+          default:
+            return null;
+        }
+      })}
+      {/* arah septic & resapan: jalur limbah keluar denah lewat tepi atas (belakang rumah) */}
+      <path d={`M ${px(model.mep.septic.x) - 5} ${py(0) - 9} L ${px(model.mep.septic.x)} ${py(0) - 17} L ${px(model.mep.septic.x) + 5} ${py(0) - 9} Z`} fill="#2e7d6d" />
+
       {/* ---------- label ruangan ---------- */}
       {model.areas.rooms.map((r) => (
         <text key={r.id} x={px(r.cx)} y={py(r.cy) - 6} textAnchor="middle" fill={INK} fontSize={12} fontWeight={600}>
@@ -247,6 +327,9 @@ export function DenahSheet({ model }: { model: HouseModel }) {
       <ScaleBar x={px(0)} y={VH - 58} />
       <TitleBlock x={VW - 258} y={VH - 24} w={240} judul="DENAH LANTAI 1" kode="A-01" />
 
+      <text x={16} y={VH - 33} fontSize={8} fill={INK_SOFT}>
+        {`INSTALASI (overlay denah): — biru = pipa air bersih PVC 1/2" · — hijau putus-putus = pipa limbah 3" di bawah lantai (arah panah keluar tepi atas = ke septic tank + resapan ${fmtNum(Math.abs(model.mep.resapan.z), 1)} m di belakang rumah) · — kuning = conduit sirkuit lampu · — merah = sirkuit stop kontak · simbol = titik instalasi (lihat panel Properti)`}
+      </text>
       <text x={16} y={VH - 21} fontSize={8} fill={INK_SOFT}>
         Dinding luar {model.config.tLuar} mm / sekat {model.config.tDalam} mm — kotak kecil = kolom praktis 15/15 di simpul dinding
       </text>

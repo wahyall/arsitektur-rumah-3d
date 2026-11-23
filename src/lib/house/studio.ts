@@ -19,6 +19,8 @@ export const DEFAULT_VIEW: StudioView = {
   showDinding: true,
   showLabels: false,
   showFinishing: false,
+  showAir: true, // jalur pipa air bersih & limbah (overlay sinar-X)
+  showListrik: true, // jalur listrik conduit + titik lampu/saklar/stop kontak
   explode: 0,
   cutH: 1000,
   stage: 0,

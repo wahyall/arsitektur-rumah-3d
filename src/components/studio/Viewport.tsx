@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import {
   BrickWall,
   Camera,
+  Droplets,
   Grid3x3,
   Home,
   Mountain,
@@ -19,6 +20,7 @@ import {
   Globe,
   RotateCcw,
   View,
+  Zap,
 } from "lucide-react";
 
 interface Props {
@@ -40,6 +42,12 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
   const isHebel = model.config.jenis === "hebel";
   const plesterOn = view.showFinishing || stage >= 7;
   const catOn = view.showFinishing || stage >= 8;
+  // jalur MEP terlihat: mode bebas = flag; mode tahapan = rough-in tahap 5-6
+  const airShown = stage === 0 ? view.showAir : stage === 5 || stage === 6;
+  const listrikShown = stage === 0 ? view.showListrik : stage === 5 || stage === 6;
+  const mepOn = airShown || listrikShown;
+  const pipaM = airShown ? model.mep.airBersihM + model.mep.airKotorM : 0;
+  const titikListrik = model.mep.titikLampu + model.mep.saklar + model.mep.stopkontak;
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -130,6 +138,30 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
 
         <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
 
+        {/* jalur instalasi air & listrik (overlay sinar-X menembus dinding/lantai) */}
+        <div className="flex items-center gap-0.5" role="group" aria-label="Jalur instalasi">
+          <ToggleBtn
+            active={airShown}
+            disabled={stage > 0}
+            onClick={() => onView({ showAir: !view.showAir })}
+            title={stage > 0 ? "Jalur instalasi dikendalikan mode tahapan (tahap 5-6: rough-in)" : "Jalur pipa air bersih & limbah (overlay sinar-X)"}
+          >
+            <Droplets className="h-3.5 w-3.5" aria-hidden />
+            <span className="ml-1 hidden md:inline">Air</span>
+          </ToggleBtn>
+          <ToggleBtn
+            active={listrikShown}
+            disabled={stage > 0}
+            onClick={() => onView({ showListrik: !view.showListrik })}
+            title={stage > 0 ? "Jalur instalasi dikendalikan mode tahapan (tahap 5-6: rough-in)" : "Jalur listrik: conduit, titik lampu/saklar/stop kontak"}
+          >
+            <Zap className="h-3.5 w-3.5" aria-hidden />
+            <span className="ml-1 hidden md:inline">Listrik</span>
+          </ToggleBtn>
+        </div>
+
+        <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
+
         <div className="hidden items-center gap-0.5 sm:flex" role="group" aria-label="Overlay">
           <IconToggleBtn active={view.dims} onClick={() => onView({ dims: !view.dims })} title="Anotasi dimensi 3D">
             <Ruler className="h-3.5 w-3.5" aria-hidden />
@@ -158,7 +190,7 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
 
       {/* ---------- kanvas 3D ---------- */}
       <div className="relative min-h-0 flex-1">
-        <canvas ref={canvasRef} className="viewport-canvas h-full w-full cursor-grab active:cursor-grabbing" aria-label="Viewport 3D rumah dengan susunan bata, struktur, dan atap" />
+        <canvas ref={canvasRef} className="viewport-canvas h-full w-full cursor-grab active:cursor-grabbing" aria-label="Viewport 3D rumah dengan susunan bata, struktur, atap, dan jalur instalasi air & listrik" />
 
         {/* info kiri-atas */}
         <div className="pointer-events-none absolute left-2 top-2 flex flex-col gap-1">
@@ -166,6 +198,24 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
             <BrickWall className="h-3.5 w-3.5 text-primary" aria-hidden />
             Bata terpasang: <b className="tabular-nums">{fmtNum(model.count.totalPieces)}</b> buah
           </div>
+          {mepOn && (
+            <div className="pointer-events-auto flex items-center gap-1.5 rounded-sm border border-white/10 bg-black/45 px-2 py-1 text-[11px] font-medium text-stone-200 shadow backdrop-blur-sm">
+              {airShown && (
+                <>
+                  <Droplets className="h-3.5 w-3.5 text-sky-400" aria-hidden />
+                  Pipa air: <b className="tabular-nums">{fmtNum(Math.ceil(pipaM))}</b> m
+                </>
+              )}
+              {airShown && listrikShown && <span className="text-stone-500">|</span>}
+              {listrikShown && (
+                <>
+                  <Zap className="h-3.5 w-3.5 text-amber-400" aria-hidden />
+                  Conduit: <b className="tabular-nums">{fmtNum(Math.ceil(model.mep.conduitM))}</b> m ·{" "}
+                  {fmtNum(titikListrik)} titik
+                </>
+              )}
+            </div>
+          )}
           {stageInfo && (
             <div className="pointer-events-auto rounded-sm border border-primary/40 bg-primary/90 px-2 py-1 text-[11px] font-semibold text-primary-foreground shadow backdrop-blur-sm">
               Tahap {stageInfo.no}: {stageInfo.nama} ({stageInfo.durasi})
@@ -219,6 +269,10 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
           <LegendItem hex="#c9c3b6" label="Roster lubang angin" />
           {plesterOn && <LegendItem hex="#9b978d" label="Plester + acian" />}
           {catOn && <LegendItem hex={view.paintHex} label="Cat eksterior" border />}
+          {airShown && <LegendItem hex="#4c9ee8" label={"Air bersih PVC 1/2\""} />}
+          {airShown && <LegendItem hex="#4f9d8d" label={"Limbah PVC 3\""} />}
+          {listrikShown && <LegendItem hex="#f2c14e" label="Listrik lampu 1,5 mm²" />}
+          {listrikShown && <LegendItem hex="#e05b4d" label="Stop kontak 2,5 mm²" />}
         </div>
 
         {/* status potongan kanan-bawah */}
@@ -270,15 +324,17 @@ function ViewBtn({
   );
 }
 
-function ToggleBtn({ active, onClick, title, children }: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) {
+function ToggleBtn({ active, disabled, onClick, title, children }: { active: boolean; disabled?: boolean; onClick: () => void; title: string; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={title}
       className={cn(
         "flex h-7 items-center rounded-sm px-2 text-[11px] font-medium transition-colors",
         active ? "bg-primary text-primary-foreground" : "text-stone-300 hover:bg-white/10 hover:text-white",
+        disabled && "cursor-not-allowed opacity-50",
       )}
     >
       {children}

@@ -37,3 +37,10 @@ Aplikasi web rumah 6×6 m didesain ulang menjadi **studio editor ala Blender/Uni
 ## Perilaku data
 - State: `config` (HouseConfig), `prices`, `upahPct`, `view: StudioView` (ViewState + grid/ground/wireframe/dims/ortho). Model & RAB dihitung `useMemo` — semua lembar gambar mengikuti parameter secara live.
 - Dihapus: `SceneCanvas.tsx`, `PlanView.tsx` (digantikan Viewport + DenahSheet).
+
+## Instalasi Air & Listrik (MEP) — tambahan
+- **Data**: `engine.ts` — `MepSpec` (points + routes polyline 3D, preset `MEP_2BR` & `MEP_STUDIO` terpasang di `LAYOUT_PRESETS[].mep`), `buildMepRT` menghitung panjang per jenis jalur → `model.mep`.
+- **Scene 3D**: `scene.ts` — `buildMep()` menggambar pipa sebagai silinder per segmen dengan bola pada sambungan siku; **overlay sinar-X** (`depthTest: false`, tanpa clipping) sehingga jalur tertanam tetap terbaca. Warna: air bersih ½" biru `#4c9ee8`, limbah 3" teal `#4f9d8d`, kabel lampu kuning `#f2c14e` (NYM 2×1,5), stop kontak merah `#e05b4d` (2×2,5). Marker titik: lampu (bola emissive), saklar/stop kontak (piring krem, orientasi mengikuti dinding terdekat), panel MCB, meter air, kran, shower, kloset (mangkuk+tangki), floor drain; septic tank + resapan bawah tanah dengan label chip.
+- **Tahapan**: mode tahapan menampilkan MEP otomatis di tahap 5-6 (rough-in paralel atap, sebelum plester menutup); mode bebas via flag `showAir`/`showListrik` (default ON).
+- **UI**: viewport header tombol Air/Listrik + chip statistik + legenda; Outliner grup "Instalasi air & listrik"; PropertiesPanel tab Tampilan (toggle + ringkasan titik); DenahSheet overlay jalur (biru solid / hijau putus / kuning-merah putus + simbol titik + panah arah septic + legenda bawah).
+- **RAB**: divisi VIII dipecah 16 baris granular dihitung dari `model.mep` (pipa m1, septic unit, sanitair bh, conduit m1, kabel per sirkuit m1, titik lampu/saklar/stop kontak bh, panel MCB, grounding) — harga satuan bisa diedit di RabPanel.
