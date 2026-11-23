@@ -217,7 +217,7 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
           <LegendItem hex="#96524a" label="Genteng beton" />
           <LegendItem hex="#83552d" label="Kusen & pintu" />
           <LegendItem hex="#c9c3b6" label="Roster lubang angin" />
-          {plesterOn && <LegendItem hex="#d8d4c9" label="Plester + acian" />}
+          {plesterOn && <LegendItem hex="#9b978d" label="Plester + acian" />}
           {catOn && <LegendItem hex={view.paintHex} label="Cat eksterior" border />}
         </div>
 

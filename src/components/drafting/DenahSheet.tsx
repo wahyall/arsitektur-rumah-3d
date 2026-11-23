@@ -46,12 +46,18 @@ export function DenahSheet({ model }: { model: HouseModel }) {
       <rect x={10} y={10} width={VW - 20} height={VH - 20} fill="none" stroke={INK} strokeWidth={1.8} />
       <rect x={15} y={15} width={VW - 30} height={VH - 30} fill="none" stroke={INK} strokeWidth={0.6} />
 
-      {/* ---------- as grid ---------- */}
+      {/* ---------- as grid: bubble di kedua sisi + garis as menarus denah ---------- */}
       {[0, 3, 6].map((gx) => (
-        <GridBubble key={`t${gx}`} cx={px(gx)} cy={45} r={10} label={String(gx / 3 + 1)} lineX2={px(6) + 14} lineY2={0} vertical={true} />
+        <GridBubble key={`t${gx}`} cx={px(gx)} cy={45} r={10} label={String(gx / 3 + 1)} lineX2={px(gx)} lineY2={py(6) + 58} vertical={true} />
+      ))}
+      {[0, 3, 6].map((gx) => (
+        <GridBubble key={`b${gx}`} cx={px(gx)} cy={py(6) + 58} r={10} label={String(gx / 3 + 1)} lineX2={px(gx)} lineY2={45} vertical={true} />
       ))}
       {[0, 3, 6].map((gy) => (
-        <GridBubble key={`l${gy}`} cx={45} cy={py(gy)} r={10} label={String.fromCharCode(65 + gy / 3)} lineX2={0} lineY2={py(6) + 14} vertical={false} />
+        <GridBubble key={`l${gy}`} cx={45} cy={py(gy)} r={10} label={String.fromCharCode(65 + gy / 3)} lineX2={VW - 45} lineY2={py(gy)} vertical={false} />
+      ))}
+      {[0, 3, 6].map((gy) => (
+        <GridBubble key={`r${gy}`} cx={VW - 45} cy={py(gy)} r={10} label={String.fromCharCode(65 + gy / 3)} lineX2={45} lineY2={py(gy)} vertical={false} />
       ))}
 
       {/* ---------- rantai ukuran atas & kiri (2 baris: parsial + keseluruhan) ---------- */}
@@ -74,7 +80,7 @@ export function DenahSheet({ model }: { model: HouseModel }) {
         </g>
       </g>
 
-      {/* ---------- pondasi (garis putus-putus di bawah denah) ---------- */}
+      {/* ---------- pondasi (garis putus-putus di bawah seluruh jalur dinding) ---------- */}
       {cakar ? (
         <g fill="none" stroke={INK_SOFT} strokeWidth={1} strokeDasharray="7 4">
           <rect x={px(0)} y={py(0)} width={6 * S} height={6 * S} />
@@ -86,21 +92,22 @@ export function DenahSheet({ model }: { model: HouseModel }) {
           </text>
         </g>
       ) : (
-        model.walls
-          .filter((w) => w.outer)
-          .map((w) => {
-            const rect =
-              w.axis === "h"
-                ? { x: px(w.lo), y: py(w.c - 0.2), w: (w.hi - w.lo) * S, h: 0.4 * S }
-                : { x: px(w.c - 0.2), y: py(w.lo), w: 0.4 * S, h: (w.hi - w.lo) * S };
-            return <rect key={`pond-${w.id}`} x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="none" stroke={INK_SOFT} strokeWidth={1} strokeDasharray="7 4" />;
-          })
+        model.walls.map((w) => {
+          const rect =
+            w.axis === "h"
+              ? { x: px(w.lo), y: py(w.c - 0.2), w: (w.hi - w.lo) * S, h: 0.4 * S }
+              : { x: px(w.c - 0.2), y: py(w.lo), w: 0.4 * S, h: (w.hi - w.lo) * S };
+          return <rect key={`pond-${w.id}`} x={rect.x} y={rect.y} width={rect.w} height={rect.h} fill="none" stroke={INK_SOFT} strokeWidth={1} strokeDasharray="7 4" />;
+        })
       )}
       {!cakar && (
         <text x={px(0.1)} y={py(6) + 26} fontSize={8.5} fill={INK_SOFT}>
           PONDASI BATU KALI STRIP 40 x 60 cm (GARIS PUTUS-PUTUS) DI BAWAH SELURUH JALUR DINDING
         </text>
       )}
+      <text x={px(3)} y={py(6) + 92} textAnchor="middle" fontSize={8.5} fontWeight={600} fill={INK_SOFT}>
+        POTONGAN A-A &mdash; LIHAT LEMBAR A-04
+      </text>
 
       {/* ---------- dinding (poche hitam) ---------- */}
       {model.walls.map((w) => {
@@ -171,9 +178,9 @@ export function DenahSheet({ model }: { model: HouseModel }) {
               );
             }
 
-            // pintu: bukaan putih + daun pintu + busur ayun
-            const dy = w.axis === "h" ? (w.c < 3 ? 1 : -1) : 0;
-            const dx = w.axis === "v" ? (w.c < 3 ? 1 : -1) : 0;
+            // pintu: bukaan putih + daun pintu + busur ayun (arah ayun ke ruangan yang dilayani)
+            const dy = o.swing ?? (w.axis === "h" ? (w.c < 3 ? 1 : -1) : 0);
+            const dx = o.swing ?? (w.axis === "v" ? (w.c < 3 ? 1 : -1) : 0);
             const r = (o.to - o.from) * S;
             if (w.axis === "h") {
               const hx = px(o.from);
@@ -230,13 +237,10 @@ export function DenahSheet({ model }: { model: HouseModel }) {
           </text>
         </g>
       ))}
-      <text x={px(3)} y={py(2.5) - 14} textAnchor="middle" fontSize={8.5} fontWeight={600} fill={INK_SOFT}>
-        POTONGAN A-A (lihat lembar A-04)
-      </text>
 
       {/* ---------- ukuran dalam (bersih) ---------- */}
       <g>
-        <HDim xFrom={px(tL)} xTo={px(6 - tL)} y={py(6) + 42} label={`${fmtM(6 - 2 * tL)} (bersih)`} above={false} />
+        <HDim xFrom={px(tL)} xTo={px(6 - tL)} y={py(6) + 40} label={`${fmtM(6 - 2 * tL)} (bersih)`} above={false} />
       </g>
 
       <NorthArrow x={VW - 52} y={60} />

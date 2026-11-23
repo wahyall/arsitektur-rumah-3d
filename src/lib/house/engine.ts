@@ -23,6 +23,7 @@ export interface OpeningSpec {
   top: number; // tinggi ambang atas
   kind: OpeningKind;
   label: string;
+  swing?: 1 | -1; // arah ayun daun pintu pada denah (wal dinding: +Y/-Y, vertikal: +X/-X)
 }
 
 export interface WallSpec {
@@ -62,8 +63,8 @@ const PINTU_H = 2.1;
 const JENDELA_H_ATAS = 2.1;
 const JENDELA_SILL = 0.9;
 
-function pintu(from: number, label: string): OpeningSpec {
-  return { from, to: from + PINTU_W, sill: 0, top: PINTU_H, kind: "pintu", label };
+function pintu(from: number, label: string, swing?: 1 | -1): OpeningSpec {
+  return { from, to: from + PINTU_W, sill: 0, top: PINTU_H, kind: "pintu", label, swing };
 }
 function jendela(from: number, w: number, label: string, sill = JENDELA_SILL, top = JENDELA_H_ATAS): OpeningSpec {
   return { from, to: from + w, sill, top, kind: "jendela", label };
@@ -126,7 +127,7 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
       {
         id: "w5", name: "Sekat kamar (vertikal)", axis: "v", pos: 3,
         from: (t) => t.tL, to: (t) => 6 - t.tL, outer: false,
-        openings: [pintu(1.0, "Pintu kamar 2"), pintu(4.3, "Pintu kamar 1")],
+        openings: [pintu(1.0, "Pintu kamar 2", -1), pintu(4.3, "Pintu kamar 1", -1)],
       },
       {
         id: "w6", name: "Sekat antar kamar", axis: "h", pos: 3,
@@ -136,7 +137,7 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
       {
         id: "w7", name: "Sekat area basah", axis: "h", pos: 1.5,
         from: (t) => 3 + t.tD / 2, to: (t) => 6 - t.tL, outer: false,
-        openings: [pintu(3.3, "Pintu kamar mandi")],
+        openings: [pintu(3.3, "Pintu kamar mandi", -1)],
       },
       {
         id: "w8", name: "Sekat kamar mandi", axis: "v", pos: 4.5,
@@ -195,7 +196,7 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
       {
         id: "w8", name: "Sekat kamar mandi", axis: "v", pos: 4.5,
         from: (t) => t.tL, to: (t) => 2 - t.tD / 2, outer: false,
-        openings: [pintu(0.9, "Pintu kamar mandi")],
+        openings: [pintu(0.9, "Pintu kamar mandi", 1)],
       },
       {
         id: "w7", name: "Sekat area basah", axis: "h", pos: 2,
@@ -294,7 +295,9 @@ export const SLOOF_W = 0.15; // lebar sloof & ring balk 15 cm
 export const KOLOM_S = 0.15; // kolom praktis 15/15
 export const PONDASI_W = 0.4; // lebar pondasi batu kali strip (m)
 export const PONDASI_D = 0.6; // kedalaman pondasi (m)
-export const KUDA_SPACING = 1.2; // jarak kuda-kuda baja ringan (m)
+export const GALIAN_W = 0.6; // lebar galian tanah pondasi (m)
+export const URUGAN_T = 0.1; // tebal urugan pasir bawah pondasi (m)
+export const KUDA_SPACING = 1.2; // jarak maksimum kuda-kuda baja ringan (m)
 
 /**
  * Pondasi cakar ayam (sistem Sedyatmo): pelat beton bertulang tipis yang
@@ -329,7 +332,8 @@ export const DEFAULT_CONFIG_MERAH: HouseConfig = {
   jenis: "merah",
   tLuar: 100,
   tDalam: 100,
-  natMm: 10,
+  natMm: 15, // spesi bata merah lazim 1-1,5 cm (AHSP: ±70 bata/m2)
+  wastePct: 10,
   plesteran: true,
 };
 
@@ -432,6 +436,7 @@ export interface HouseModel {
   koloms: KolomRT[];
   structure: {
     galianM3: number;
+    uruganPasirM3: number;
     pondasiM3: number;
     sloofM3: number;
     kolomM3: number;
@@ -516,13 +521,16 @@ export function buildModel(config: HouseConfig): HouseModel {
       ? (x: number) => w.gable!.baseZ + w.gable!.apexAdd * clamp01(1 - Math.abs(x - w.gable!.apexAt) / w.gable!.halfSpan)
       : () => w.h;
 
-    // luas muka satu sisi (net bukaan; band ring balk tidak dihitung karena beton)
+    // luas muka satu sisi (net bukaan: tinggi bukaan = top - sill, dipotong tinggi
+    // dinding datar / pelana; band ring balk tidak dihitung karena beton)
     const gableArea = w.gable ? w.gable.apexAdd * (w.hi - w.lo) * 0.5 : 0;
+    const hAtMid = (o: OpeningSpec) =>
+      Math.max(w.h, hAt((o.from + o.to) / 2));
     const openingArea = w.openings.reduce(
       (s, o) =>
         s +
         Math.max(0, Math.min(o.to, w.hi) - Math.max(o.from, w.lo)) *
-          Math.min(o.top, Math.max(w.h, hAt((o.from + o.to) / 2))),
+          Math.max(0, Math.min(o.top, hAtMid(o)) - o.sill),
       0,
     );
     wallFace += w.h * len + gableArea - openingArea;
@@ -646,12 +654,13 @@ export function buildModel(config: HouseConfig): HouseModel {
   const perekatKg = config.jenis === "hebel" ? wallFace * 4 : 0;
   const perekatZak = config.jenis === "hebel" ? perekatKg / 40 : 0;
 
-  // ----- atap pelana (kuda-kuda C75 jarak 1,2 m, genteng beton 10 pcs/m2)
+  // ----- atap pelana (kuda-kuda C75 jarak maks 1,2 m, genteng beton 10 pcs/m2)
   const ov = config.overhang;
   const yRidge = rbTop + apexAdd;
   const slopeHalf = Math.hypot(3 + ov, apexAdd + ov * pitch);
   const roofArea = 2 * slopeHalf * (6 + 2 * ov);
-  const kudaKuda = Math.max(4, Math.round(6 / KUDA_SPACING));
+  // jumlah kuda-kuda: seluruh bentang 6 m dengan jarak antar rangka maks 1,2 m
+  const kudaKuda = Math.max(4, Math.ceil(6 / KUDA_SPACING) + 1);
   const rengPerSlope = Math.ceil(3 / 0.4) + 1;
   const gentengPcs = Math.ceil(roofArea * 10);
 
@@ -689,12 +698,15 @@ export function buildModel(config: HouseConfig): HouseModel {
 
   // ----- kuantitas struktur (galian & pondasi mengikuti jenis pondasi)
   const galianM3 =
-    config.pondasi === "cakarayam" && cakar ? cakar.galianM3 : wallLenTotal * PONDASI_D * 0.5; // galian lebar 50 cm
+    config.pondasi === "cakarayam" && cakar
+      ? cakar.galianM3
+      : wallLenTotal * PONDASI_D * GALIAN_W; // galian 60 x 60 cm
+  const uruganPasirM3 = config.pondasi === "cakarayam" ? 0 : wallLenTotal * GALIAN_W * URUGAN_T;
   const pondasiM3 = config.pondasi === "cakarayam" ? 0 : wallLenTotal * PONDASI_W * PONDASI_D;
   const sloofM3 = wallLenTotal * SLOOF_W * RB_H;
   const kolomM3 = koloms.length * KOLOM_S * KOLOM_S * (config.tinggi + RB_H);
   const ringbalkM3 = wallLenTotal * SLOOF_W * RB_H;
-  const lisplankM = 2 * (6 + 2 * ov);
+  const lisplankM = 2 * (6 + 2 * ov) + 2 * slopeHalf; // eaves + kedua ujung pelana
   const talangM = 2 * (6 + 2 * ov);
 
   return {
@@ -738,7 +750,7 @@ export function buildModel(config: HouseConfig): HouseModel {
     roof: { areaM2: roofArea, apexAdd, overhang: ov, deg: config.atapDeg, pitch, yRidge, kudaKuda, rengPerSlope, gentengPcs },
     wallLenTotal,
     koloms,
-    structure: { galianM3, pondasiM3, sloofM3, kolomM3, ringbalkM3, lisplankM, talangM, cakar },
+    structure: { galianM3, uruganPasirM3, pondasiM3, sloofM3, kolomM3, ringbalkM3, lisplankM, talangM, cakar },
   };
 }
 
@@ -847,7 +859,8 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
     push("urugan", "d2", "Urugan pasir bawah pelat", "Pasir setempat 5 cm, dipadatkan sebelum cor pelat", Math.ceil(c.uruganM3 * 10) / 10, "m3", true, "urugan");
     push("cakarBeton", "d2", "Pondasi cakar ayam (sistem Sedyatmo)", `Pelat 6x6 m tebal 10 cm wiremesh D8 + ${c.buisCount} buis beton Ø40 cm panjang 80 cm, cor monolit`, Math.ceil(c.betonM3 * 100) / 100, "m3", true, "cakarBeton");
   } else {
-    push("galian", "d2", "Galian tanah pondasi + urugan kembali", "Galian lebar 50 cm sedalam 60 cm sepanjang dinding", Math.ceil(model.structure.galianM3 * 10) / 10, "m3", true);
+    push("galian", "d2", "Galian tanah pondasi", "Galian 60 x 60 cm sedalam 60 cm sepanjang jalur dinding", Math.ceil(model.structure.galianM3 * 10) / 10, "m3", true);
+    push("uruganPasir", "d2", "Urugan pasir bawah pondasi", "Pasir setempat 10 cm dipadatkan di dasar galian", Math.ceil(model.structure.uruganPasirM3 * 10) / 10, "m3", true, "urugan");
     push("pondasi", "d2", "Pondasi batu kali + campuran 1:5", "Strip 40 x 60 cm (kedalaman 60 cm)", Math.ceil(model.structure.pondasiM3 * 10) / 10, "m3", true);
   }
 
@@ -872,9 +885,9 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
 
   push("lubangAngin", "d4", "Lubang angin permanen (roster beton + pasang)", "Roster beton 20x20 cm di dinding & dinding pelana; ventilasi tetap terbuka", model.openings.vents, "buah", true, "lubangAngin");
 
-  push("rangkaAtap", "d5", "Rangka atap baja ringan C75 + reng", `${model.roof.kudaKuda} kuda-kuda, jarak ${KUDA_SPACING} m, borongan pasang`, Math.ceil(model.roof.areaM2), "m2", true);
+  push("rangkaAtap", "d5", "Rangka atap baja ringan C75 + reng", `${model.roof.kudaKuda} kuda-kuda, jarak antar rangka maks ${KUDA_SPACING} m, borongan pasang`, Math.ceil(model.roof.areaM2), "m2", true);
   push("genteng", "d5", "Genteng beton flat + pasang", `10 pcs/m2 (${model.roof.gentengPcs} pcs), kemiringan ${cfg.atapDeg} derajat`, Math.ceil(model.roof.areaM2), "m2", true);
-  push("lisplank", "d5", "Lisplank", "Papan penutup ujung rangka atap", Math.ceil(model.structure.lisplankM * 10) / 10, "m1", true);
+  push("lisplank", "d5", "Lisplank", "Papan penutup ujung rangka atap (eaves + kedua ujung pelana)", Math.ceil(model.structure.lisplankM * 10) / 10, "m1", true);
   push("talang", "d5", "Talang air + pipa turun", "PVC di kedua sisi eaves", Math.ceil(model.structure.talangM * 10) / 10, "m1", true);
   push("plafon", "d5", "Plafon gypsum + rangka hollow galvalum", "Gypsum 9 mm di atas luas bersih lantai", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
 

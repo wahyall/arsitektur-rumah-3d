@@ -13,7 +13,7 @@ export function TampakSheet({ model }: { model: HouseModel }) {
   const yR = model.roof.yRidge;
   const apex = model.roof.apexAdd;
   const top = yR + 0.35;
-  const bottom = -0.75;
+  const bottom = -0.5;
   const ML = 132;
   const MR = 126;
   const MT = 92;
@@ -24,7 +24,7 @@ export function TampakSheet({ model }: { model: HouseModel }) {
   const sy = (h: number) => MT + (top - h) * S;
   const planeY = (x: number) => (x < 3 ? yR - (3 - x) * pitch : yR - (x - 3) * pitch);
   const depan = model.walls.find((w) => w.id === "depan") ?? null;
-  const band = 0.15; // tebal visual bidang atap (genteng + reng)
+  const band = 0.12; // tebal visual bidang atap (genteng + reng)
 
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} className="h-auto w-full" role="img" aria-label="Lembar gambar tampak depan rumah">
@@ -48,6 +48,18 @@ export function TampakSheet({ model }: { model: HouseModel }) {
         );
       })}
       <rect x={sx(2.83)} y={sy(yR + band)} width={0.34 * S} height={0.16 * S} fill="#7c3f38" stroke={INK} strokeWidth={1.2} />
+      {/* lisplank ujung pelana: papan penutup tepi overstek kedua sisi miring */}
+      {[-1, 1].map((sgn) => (
+        <line
+          key={`lg${sgn}`}
+          x1={sgn < 0 ? sx(-ov) : sx(6 + ov)}
+          y1={sy(rbTop - ov * pitch)}
+          x2={sx(3)}
+          y2={sy(yR)}
+          stroke="#d8c9a8"
+          strokeWidth={4}
+        />
+      ))}
       {[-1, 1].map((sgn) => (
         <rect
           key={`lp${sgn}`}
@@ -82,8 +94,8 @@ export function TampakSheet({ model }: { model: HouseModel }) {
           })}
 
       {/* ---------- muka tanah + arsir ---------- */}
-      <line x1={sx(-ov) - 12} y1={sy(-0.55)} x2={sx(6 + ov) + 12} y2={sy(-0.55)} stroke={INK} strokeWidth={2.2} />
-      <rect x={sx(-ov) - 12} y={sy(-0.55)} width={(6 + 2 * ov) * S + 24} height={0.2 * S} fill="url(#tampak-tanah)" />
+      <line x1={sx(-ov) - 12} y1={sy(-0.2)} x2={sx(6 + ov) + 12} y2={sy(-0.2)} stroke={INK} strokeWidth={2.2} />
+      <rect x={sx(-ov) - 12} y={sy(-0.2)} width={(6 + 2 * ov) * S + 24} height={0.2 * S} fill="url(#tampak-tanah)" />
 
       {/* ---------- level & dimensi tinggi (kanan) ---------- */}
       <LevelMark x={sx(-ov) - 58} y={sy(0)} label="±0,00" />
@@ -101,12 +113,12 @@ export function TampakSheet({ model }: { model: HouseModel }) {
 
       {/* ---------- dimensi lebar (bawah) ---------- */}
       <g>
-        <HDim xFrom={sx(-ov)} xTo={sx(0)} y={sy(-0.55) + 48} label={fmtM(ov)} above={false} />
-        <HDim xFrom={sx(0)} xTo={sx(6)} y={sy(-0.55) + 48} label="6,00" above={false} />
-        <HDim xFrom={sx(6)} xTo={sx(6 + ov)} y={sy(-0.55) + 48} label={fmtM(ov)} above={false} />
+        <HDim xFrom={sx(-ov)} xTo={sx(0)} y={sy(-0.2) + 48} label={fmtM(ov)} above={false} />
+        <HDim xFrom={sx(0)} xTo={sx(6)} y={sy(-0.2) + 48} label="6,00" above={false} />
+        <HDim xFrom={sx(6)} xTo={sx(6 + ov)} y={sy(-0.2) + 48} label={fmtM(ov)} above={false} />
         <g stroke={INK_FADED} strokeWidth={0.6}>
-          <line x1={sx(-ov)} y1={sy(-0.55) + 4} x2={sx(-ov)} y2={sy(-0.55) + 52} />
-          <line x1={sx(6 + ov)} y1={sy(-0.55) + 4} x2={sx(6 + ov)} y2={sy(-0.55) + 52} />
+          <line x1={sx(-ov)} y1={sy(-0.2) + 4} x2={sx(-ov)} y2={sy(-0.2) + 52} />
+          <line x1={sx(6 + ov)} y1={sy(-0.2) + 4} x2={sx(6 + ov)} y2={sy(-0.2) + 52} />
         </g>
       </g>
 
@@ -115,10 +127,10 @@ export function TampakSheet({ model }: { model: HouseModel }) {
       <LeaderLabel x={sx(4.35)} y={sy(yR) - 24} toX={sx(3.12)} toY={sy(yR + 0.08)} text="NOK / RIDGE CAP" />
       <LeaderLabel x={sx(0.3)} y={sy(1.9) - 26} toX={sx(0.8)} toY={sy(1.6)} text="DINDING BATA + PLESTER & CAT" anchor="end" />
       <LeaderLabel x={sx(3.7)} y={sy(2.6)} toX={sx(4.65)} toY={sy(1.9)} text="KUSEN KAYU + DAUN PINTU PANEL" />
-      <LeaderLabel x={sx(6.3)} y={sy(3.42)} toX={sx(5.75)} toY={sy(2.62)} text="ROSTER LUBANG ANGIN" anchor="end" />
-      <LeaderLabel x={sx(0.3)} y={sy(t + 0.1) + 32} toX={sx(0.5)} toY={sy(t + 0.1)} text="RING BALK 15/20" anchor="end" />
-      <LeaderLabel x={sx(6.55)} y={sy(rbTop - 0.25 * pitch) + 30} toX={sx(6.3)} toY={sy(rbTop - 0.35 * pitch) + 4} text={`OVERSTEK ${fmtNum(ov * 100, 0)} cm`} />
-      <LeaderLabel x={sx(1.6)} y={sy(-0.28)} toX={sx(2.4)} toY={sy(-0.55)} text="MUKA TANAH -0,55" anchor="end" />
+      <LeaderLabel x={sx(5.15)} y={sy(2.95)} toX={sx(5.75)} toY={sy(2.62)} text="ROSTER LUBANG ANGIN" />
+      <LeaderLabel x={sx(1.9)} y={sy(t + 0.1) + 34} toX={sx(0.5)} toY={sy(t + 0.1)} text="RING BALK 15/20" anchor="start" />
+      <LeaderLabel x={sx(-0.45)} y={sy(rbTop - 0.35 * pitch) + 12} toX={sx(-0.52)} toY={sy(rbTop - 0.5 * pitch) + 8} text={`OVERSTEK ${fmtNum(ov * 100, 0)} cm`} anchor="end" />
+      <LeaderLabel x={sx(1.6)} y={sy(-0.05)} toX={sx(2.4)} toY={sy(-0.2)} text="MUKA TANAH -0,20" anchor="end" />
 
       <TitleBlock x={VW - 258} y={VH - 24} w={240} judul="TAMPAK DEPAN" kode="A-02" />
       <text x={16} y={VH - 21} fontSize={8} fill={INK_FADED}>

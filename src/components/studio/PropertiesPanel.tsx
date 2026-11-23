@@ -70,7 +70,7 @@ export function PropertiesPanel({ config, onConfig, onGantiJenis, view, onView, 
               hint={
                 config.pondasi === "cakarayam"
                   ? "Sistem Sedyatmo: pelat beton 6x6 m + buis beton menancap — hemat galian, unggul di tanah lunak."
-                  : "Paling ekonomis untuk tanah keras; galian selebar 50 cm sepanjang jalur dinding."
+                  : "Paling ekonomis untuk tanah keras; galian 60 x 60 cm sepanjang jalur dinding."
               }
             >
               <Select value={config.pondasi} onValueChange={(v) => onConfig({ pondasi: v as HouseConfig["pondasi"] })}>

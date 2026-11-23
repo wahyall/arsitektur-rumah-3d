@@ -31,11 +31,11 @@ export const TAHAPAN_PEKERJAAN: TahapanPekerjaan[] = [
     nama: "Pondasi & galian",
     durasi: "1-2 minggu",
     detail:
-      "Galian tanah sedalam 60-80 cm selebar 50 cm di jalur dinding, urugan pasir/pasir batu 10 cm, lalu pasang pondasi batu kali strip 40 x 60 cm dengan campuran 1:5 (semen : pasir). Untuk tanah lunak/berair pertimbangkan footplate (bakar 80x80) di bawah kolom, atau pondasi cakar ayam (pelat beton + buis beton) yang galiannya jauh lebih sedikit.",
+      "Galian tanah sedalam 60 cm selebar 60 cm di jalur dinding (60-80 cm bila tanah gembur), urugan pasir/pasir batu 10 cm dipadatkan, lalu pasang pondasi batu kali strip 40 x 60 cm dengan campuran 1:5 (semen : pasir). Untuk tanah lunak/berair pertimbangkan footplate (bakar 80x80) di bawah kolom, atau pondasi cakar ayam (pelat beton + buis beton) yang galiannya jauh lebih sedikit.",
     cekMutu: [
       "Kedalaman galian seragam, dasar padat (tanah urug dibuang)",
       "Batu kali dipasang bertumpuk dan terikat adukan, tidak ada rongga besar",
-      "Puncak pondasi rata & 5 cm di bawah level lantai sloof",
+      "Puncak pondasi rata tepat di bawah dudukan sloof (level -0,20 dari lantai ±0,00)",
     ],
   },
   {
@@ -154,7 +154,7 @@ export const DETAIL_ELEMEN: DetailElemen[] = [
       "Campuran pondasi 1 zak semen : 5 pasir (1:5), batu belah/batu kali diaduk penuh.",
       "Alternatif pondasi cakar ayam (sistem Sedyatmo, penemu insinyur Indonesia): pelat beton bertulang 6x6 m tebal 7,5-10 cm + buis beton vertikal Ø40 cm menancap 60-100 cm pada jarak 2,5-3 m. Galian jauh lebih sedikit dan menang di tanah lunak/berair, namun betonnya lebih mahal dari batu kali.",
       "Tanah lunak/daerah berair: gunakan footplate beton bertulang di titik kolom (mis. 80x80 cm) atau pondasi Sumuran bila tidak memakai cakar ayam.",
-      "Puncak pondasi +5 cm di bawah level lantai (tempat dudukan sloof).",
+      "Puncak pondasi rata tepat di bawah sloof (level -0,20 dari lantai ±0,00; sloof 15/20 duduk di atasnya).",
     ],
   },
   {
@@ -188,7 +188,7 @@ export const DETAIL_ELEMEN: DetailElemen[] = [
     poin: [
       "Bata ringan sesuai SNI 8640:2018, ukuran 600 x 200 mm, tebal 75-200 mm (dinding luar 100-150 mm, sekat 75-100 mm).",
       "Perekat hebel (mortar instan): nat 2-3 mm, konsumsi sekitar 4 kg per m2 dinding (zak 40 kg).",
-      "Bata merah 20x10x5 cm: pasangan 1/2 batu, spesi 1:5 nat 1-1,5 cm; konsumsi umum 8-10 zak semen per 1000 bata.",
+      "Bata merah 20x10x5 cm: pasangan 1/2 batu, spesi 1:5 nat 1-1,5 cm; AHSP PUPR memakai ±70 bata per m2. Konsumsi adukan dihitung aplikasi ini dari volume nat sebenarnya (±7-10 kg semen/m2); praktik borongan lapangan sering memesan 8-10 zak per 1000 bata sebagai cadangan loss.",
       "Sambungan antar bata minimal 10 cm (setengah panjang) dan tidak segaris antar lapisan.",
       "Dinding tinggi > 3 m atau panjang > 6 m: perlu kolom intermediate agar tidak melentur.",
       "Angkur besi dinding-kolom setiap 4-5 lapis mencegah retak pada pertemuan material beda.",

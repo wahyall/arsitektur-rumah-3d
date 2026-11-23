@@ -17,6 +17,7 @@ export function PotonganSheet({ model }: { model: HouseModel }) {
   const apex = model.roof.apexAdd;
   const top = yR + 0.3;
   const bottom = -1.3;
+  const band = 0.12; // tebal visual bidang atap (genteng + reng)
   const ML = 148;
   const MR = 122;
   const MT = 92;
@@ -32,7 +33,6 @@ export function PotonganSheet({ model }: { model: HouseModel }) {
   const cutWalls = (["kiri", "w5", "kanan"] as string[]).map((id) => model.walls.find((w) => w.id === id)).filter((w): w is WallRT => Boolean(w));
   const depan = model.walls.find((w) => w.id === "depan") ?? null;
   const w6 = model.walls.find((w) => w.id === "w6") ?? null;
-  const band = 0.15;
   const legend: { n: number; text: string }[] = [
     { n: 1, text: cakar ? "PELAT CAKAR AYAM 6x6 m t10 cm + BUIS Ø40" : "PONDASI BATU KALI STRIP 40 x 60 cm" },
     { n: 2, text: "SLOOF BETON 15/20 (6D10 + begel 8-150)" },
@@ -85,8 +85,8 @@ export function PotonganSheet({ model }: { model: HouseModel }) {
       {/* ---------- kuda-kuda baja ringan (di belakang potongan) ---------- */}
       <g stroke="#9a948a" strokeWidth={1.5} fill="none">
         <line x1={sx(0.2)} y1={sy(rbTop + 0.05)} x2={sx(5.8)} y2={sy(rbTop + 0.05)} />
-        <line x1={sx(0.25)} y1={sy(rbTop + 0.09)} x2={sx(2.95)} y2={sy(yR - 0.03)} />
-        <line x1={sx(5.75)} y1={sy(rbTop + 0.09)} x2={sx(3.05)} y2={sy(yR - 0.03)} />
+        <line x1={sx(-ov + 0.06)} y1={sy(rbTop - ov * pitch + 0.09)} x2={sx(2.95)} y2={sy(yR - 0.03)} />
+        <line x1={sx(6 + ov - 0.06)} y1={sy(rbTop - ov * pitch + 0.09)} x2={sx(3.05)} y2={sy(yR - 0.03)} />
         <line x1={sx(3)} y1={sy(rbTop + 0.09)} x2={sx(3)} y2={sy(yR - 0.05)} />
         <line x1={sx(1.5)} y1={sy(rbTop + 0.087)} x2={sx(0.85)} y2={sy(planeY(0.85) + 0.03)} />
         <line x1={sx(0.85)} y1={sy(planeY(0.85) + 0.03)} x2={sx(2.9)} y2={sy(rbTop + 0.09 + (apex - 0.14) * 0.55)} />
@@ -127,7 +127,7 @@ export function PotonganSheet({ model }: { model: HouseModel }) {
             {cakar ? (
               <rect x={sx(w.c - 0.2)} y={sy(-0.2)} width={0.4 * S} height={0.9 * S} fill="url(#potongan-tanah)" stroke={INK} strokeWidth={1.1} />
             ) : (
-              <rect x={sx(w.c - 0.2)} y={sy(-0.2)} width={0.4 * S} height={0.4 * S} fill="url(#potongan-tanah)" stroke={INK} strokeWidth={1.1} />
+              <rect x={sx(w.c - 0.2)} y={sy(-0.2)} width={0.4 * S} height={0.6 * S} fill="url(#potongan-tanah)" stroke={INK} strokeWidth={1.1} />
             )}
           </g>
         );
@@ -149,15 +149,15 @@ export function PotonganSheet({ model }: { model: HouseModel }) {
       )}
 
       {/* ---------- muka tanah ---------- */}
-      <line x1={sx(-ov) - 14} y1={sy(-0.55)} x2={sx(6 + ov) + 14} y2={sy(-0.55)} stroke={INK} strokeWidth={2.2} />
-      <rect x={sx(-ov) - 14} y={sy(-0.55)} width={(6 + 2 * ov) * S + 28} height={0.18 * S} fill="url(#potongan-tanah)" />
+      <line x1={sx(-ov) - 14} y1={sy(-0.2)} x2={sx(6 + ov) + 14} y2={sy(-0.2)} stroke={INK} strokeWidth={2.2} />
+      <rect x={sx(-ov) - 14} y={sy(-0.2)} width={(6 + 2 * ov) * S + 28} height={0.18 * S} fill="url(#potongan-tanah)" />
 
       {/* ---------- level ketinggian (kiri) ---------- */}
       <LevelMark x={sx(-ov) - 62} y={sy(0)} label="±0,00" />
       <LevelMark x={sx(-ov) - 62} y={sy(t)} label={`+${fmtM(t)}`} />
       <LevelMark x={sx(-ov) - 62} y={sy(rbTop)} label={`+${fmtM(rbTop)}`} />
       <LevelMark x={sx(-ov) - 62} y={sy(yR)} label={`+${fmtM(yR)}`} />
-      <LevelMark x={sx(-ov) - 62} y={sy(-0.55)} label="MUKA TANAH" />
+      <LevelMark x={sx(-ov) - 62} y={sy(-0.2)} label="MUKA TANAH -0,20" />
 
       {/* ---------- dimensi tinggi (kanan) ---------- */}
       <VDim yFrom={sy(0)} yTo={sy(t)} x={sx(6) + 52} label={fmtM(t)} side="right" />
@@ -171,23 +171,23 @@ export function PotonganSheet({ model }: { model: HouseModel }) {
 
       {/* ---------- dimensi lebar (bawah) ---------- */}
       <g>
-        <HDim xFrom={sx(-ov)} xTo={sx(0)} y={sy(-0.55) + 52} label={fmtM(ov)} above={false} />
-        <HDim xFrom={sx(0)} xTo={sx(3)} y={sy(-0.55) + 52} label="3,00" above={false} />
-        <HDim xFrom={sx(3)} xTo={sx(6)} y={sy(-0.55) + 52} label="3,00" above={false} />
-        <HDim xFrom={sx(6)} xTo={sx(6 + ov)} y={sy(-0.55) + 52} label={fmtM(ov)} above={false} />
+        <HDim xFrom={sx(-ov)} xTo={sx(0)} y={sy(-0.2) + 52} label={fmtM(ov)} above={false} />
+        <HDim xFrom={sx(0)} xTo={sx(3)} y={sy(-0.2) + 52} label="3,00" above={false} />
+        <HDim xFrom={sx(3)} xTo={sx(6)} y={sy(-0.2) + 52} label="3,00" above={false} />
+        <HDim xFrom={sx(6)} xTo={sx(6 + ov)} y={sy(-0.2) + 52} label={fmtM(ov)} above={false} />
         <g stroke={INK_FADED} strokeWidth={0.6}>
-          <line x1={sx(-ov)} y1={sy(-0.55) + 6} x2={sx(-ov)} y2={sy(-0.55) + 56} />
-          <line x1={sx(6 + ov)} y1={sy(-0.55) + 6} x2={sx(6 + ov)} y2={sy(-0.55) + 56} />
+          <line x1={sx(-ov)} y1={sy(-0.2) + 6} x2={sx(-ov)} y2={sy(-0.2) + 56} />
+          <line x1={sx(6 + ov)} y1={sy(-0.2) + 6} x2={sx(6 + ov)} y2={sy(-0.2) + 56} />
         </g>
       </g>
 
       {/* ---------- balon detail (1-10) ---------- */}
-      <Balloon n={1} x={sx(1.05)} y={sy(-0.42)} toX={sx(0.22)} toY={sy(-0.4)} />
+      <Balloon n={1} x={sx(1.05)} y={sy(-0.42)} toX={sx(0.22)} toY={sy(-0.45)} />
       <Balloon n={2} x={sx(2.2)} y={sy(-0.09)} toX={sx(0.14)} toY={sy(-0.1)} />
       <Balloon n={3} x={sx(1.1)} y={sy(1.35)} toX={sx(0.06)} toY={sy(1.35)} />
       <Balloon n={4} x={sx(2.0)} y={sy(2.42)} toX={sx(0.05)} toY={sy(2.45)} />
       <Balloon n={5} x={sx(1.35)} y={sy(t + 0.42)} toX={sx(0.06)} toY={sy(t + 0.1)} />
-      <Balloon n={6} x={sx(4.6)} y={sy(rbTop + 0.52)} toX={sx(3.7)} toY={sy(rbTop + 0.35)} />
+      <Balloon n={6} x={sx(1.3)} y={sy(yR - 0.18)} toX={sx(1.78)} toY={sy(planeY(1.78) - 0.05)} />
       <Balloon n={7} x={sx(4.8)} y={sy(planeY(1.9) - 0.52)} toX={sx(4.6)} toY={sy(planeY(1.9) + 0.04)} />
       <Balloon n={8} x={sx(2.25)} y={sy(t - 0.22)} toX={sx(2.5)} toY={sy(t + 0.02)} />
       <Balloon n={9} x={sx(4.75)} y={sy(0.42)} toX={sx(4.55)} toY={sy(0)} />

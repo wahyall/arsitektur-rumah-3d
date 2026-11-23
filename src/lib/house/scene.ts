@@ -11,7 +11,7 @@
  */
 import * as THREE from "three";
 import type { HouseModel, WallRT, OpeningSpec, CakarAyamRT } from "@/lib/house/engine";
-import { RB_H, CAKAR } from "@/lib/house/engine";
+import { RB_H, CAKAR, PONDASI_W, PONDASI_D } from "@/lib/house/engine";
 
 export interface ViewState {
   showRoof: boolean; // genteng + nok
@@ -45,7 +45,10 @@ interface StageVis {
 
 type CameraPreset = "3d" | "depan" | "belakang" | "samping" | "atas";
 
-const GROUND_Y = -0.55;
+/** Muka tanah situs: 20 cm di bawah level lantai ±0,00 (praktik 15-25 cm agar bebas genangan). */
+const GROUND_Y = -0.2;
+/** Kedalaman top pondasi di bawah lantai = dudukan sloof 15/20 (dasar galian di -0,8 m). */
+const PONDASI_TOP = -0.2;
 
 export class HouseScene {
   private renderer: THREE.WebGLRenderer;
@@ -61,6 +64,10 @@ export class HouseScene {
   private labelGroup: THREE.Group = new THREE.Group();
   private clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
+  /** Sumber daya per-frame model (dibersihkan tiap update agar tidak membebani memori GPU). */
+  private dyn: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
+  /** Sumber daya anotasi dimensi (dibersihkan tiap rebuildDims). */
+  private dimsDyn: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
   private ro: ResizeObserver;
 
   // --- studio editor (tema gelap ala Blender): proyeksi, lingkungan, dimensi ---
@@ -363,6 +370,9 @@ export class HouseScene {
 
   update(model: HouseModel, view: ViewState) {
     this.lastModel = model;
+    // bebaskan sumber daya model sebelumnya (geometri/tekstur per-frame) sebelum membangun ulang
+    for (const d of this.dyn) d.dispose();
+    this.dyn.length = 0;
     // bersihkan rumah lama (grup persisten dilepas, lalu dipasang kembali)
     this.clearGroup(this.houseRoot);
     this.houseRoot.add(this.kolomGroup);
@@ -387,7 +397,7 @@ export class HouseScene {
     // tahap pondasi/sloof: tanah dibuat tembus pandang & petak 6x6 disembunyikan
     // agar profil pondasi (batu kali / buis cakar ayam) di bawah muka tanah terbaca
     this.matGround.transparent = semi;
-    this.matGround.opacity = semi ? 0.45 : 1;
+    this.matGround.opacity = semi ? 0.32 : 1;
     if (this.plotMesh) this.plotMesh.visible = this.envVisible.plot && !semi;
     this.groundMesh.visible = this.envVisible.ground;
     this.gridHelper.visible = this.envVisible.grid;
@@ -482,16 +492,27 @@ export class HouseScene {
     const mid = (w.lo + w.hi) / 2;
     const bw = Math.max(0.15, t + 0.01); // lebar sloof / ring balk (15 cm standar)
 
-    // pondasi batu kali: 40 x 60 cm, dari -0,6 s/d -0,2 m (digantikan cakar ayam bila aktif)
-    // sloof beton 15/20: dari -0,2 s/d 0 m | ring balk: dari tinggi s/d tinggi + 0,2 m
+    // pondasi batu kali: strip 40 x 60 cm dari -0,2 s/d -0,8 m, disusun batu demi batu
+    // (segmen dengan tinggi/lebar bervariasi agar terbaca sebagai batu kali, bukan beton)
     if (!cakar && V.pondasi) {
-      const pt = t + 0.15;
-      if (w.axis === "h") this.addBox(group, mid, -0.4, w.c, len, 0.4, pt, this.matPlinth);
-      else this.addBox(group, w.c, -0.4, mid, pt, 0.4, len, this.matPlinth);
+      const rng = mulberry32(Math.round((w.lo + w.c) * 977));
+      let a = w.lo;
+      while (a < w.hi - 0.05) {
+        const segLen = Math.min(0.3 + rng() * 0.28, w.hi - a);
+        const segW = PONDASI_W * (0.86 + rng() * 0.14);
+        const segH = PONDASI_D * (0.82 + rng() * 0.18);
+        const cy = PONDASI_TOP - segH / 2 + (rng() - 0.5) * 0.03;
+        if (w.axis === "h") {
+          this.addBox(group, a + segLen / 2, cy, w.c + (rng() - 0.5) * 0.02, segLen, segH, segW, this.matPlinth);
+        } else {
+          this.addBox(group, w.c + (rng() - 0.5) * 0.02, cy, a + segLen / 2, segW, segH, segLen, this.matPlinth);
+        }
+        a += segLen;
+      }
     }
     if (V.sloof) {
-      if (w.axis === "h") this.addBox(group, mid, -0.1, w.c, len, RB_H, bw, this.matBeton);
-      else this.addBox(group, w.c, -0.1, mid, bw, RB_H, len, this.matBeton);
+      if (w.axis === "h") this.addBox(group, mid, PONDASI_TOP + RB_H / 2, w.c, len, RB_H, bw, this.matBeton);
+      else this.addBox(group, w.c, PONDASI_TOP + RB_H / 2, mid, bw, RB_H, len, this.matBeton);
     }
     if (V.ringbalk) {
       if (w.axis === "h") this.addBox(group, mid, w.h + RB_H / 2, w.c, len, RB_H, bw, this.matBeton);
@@ -535,7 +556,7 @@ export class HouseScene {
       mesh.receiveShadow = true;
       mesh.position.set(0, 0, w.c - t / 2);
       group.add(mesh);
-      this.disposables.push(geo);
+      this.dyn.push(geo);
     }
 
     // bata instanced (band dinding & pelana mengikuti tahapan; tertutup saat plester)
@@ -566,7 +587,7 @@ export class HouseScene {
         im.setColorAt(i, col);
       });
       group.add(im);
-      this.disposables.push(geo);
+      this.dyn.push(geo);
     }
 
     // plesteran + acian / cat: lapisan tipis pada kedua muka dinding (termasuk pelana)
@@ -596,7 +617,7 @@ export class HouseScene {
           mesh.receiveShadow = true;
           mesh.position.set(0, 0, w.c + side * w.t / 2 + (side > 0 ? 0 : -pp));
           group.add(mesh);
-          this.disposables.push(geo);
+          this.dyn.push(geo);
         }
       }
     }
@@ -684,17 +705,17 @@ export class HouseScene {
   /** Pondasi cakar ayam (sistem Sedyatmo): pelat beton 6x6 m + buis beton vertikal. */
   private buildCakarAyam(c: CakarAyamRT) {
     // pelat bertulang: puncak pelat tepat di bawah sloof (-0,2 m), buram agar solid terbaca
-    this.addBox(this.houseRoot, 3, -0.2 - CAKAR.slabT / 2, 3, 6, CAKAR.slabT, 6, this.matBeton, true);
+    this.addBox(this.houseRoot, 3, PONDASI_TOP - CAKAR.slabT / 2, 3, 6, CAKAR.slabT, 6, this.matBeton, true);
     // buis beton menancap ke tanah di tiap titik kolom + grid tengah;
     // ujung atas buis dibuat rata muka pelat agar pola grid cakar terbaca dari atas
     const L = CAKAR.buisL + CAKAR.slabT;
     for (const p of c.buisPts) {
       const geo = new THREE.CylinderGeometry(CAKAR.buisDia / 2, CAKAR.buisDia / 2, L, 18);
       const m = new THREE.Mesh(geo, this.matBuis);
-      m.position.set(p.x, -0.2 + 0.02 - L / 2, p.y); // ujung atas sedikit menonjol 2 cm di muka pelat
+      m.position.set(p.x, PONDASI_TOP + 0.02 - L / 2, p.y); // ujung atas sedikit menonjol 2 cm di muka pelat
       m.receiveShadow = true;
       this.houseRoot.add(m);
-      this.disposables.push(geo);
+      this.dyn.push(geo);
     }
   }
 
@@ -725,18 +746,19 @@ export class HouseScene {
 
     // ---------- rangka baja ringan (kuda-kuda + web pengaku + reng + lisplank) ----------
     if (V.rangka) {
-      // kuda-kuda: rangka C75 pada jarak 1,2 m, tapak di atas ring balk
+      // kuda-kuda: rangka C75 pada jarak maks 1,2 m, tapak di atas ring balk
       const kuda = model.roof.kudaKuda;
       for (let i = 0; i < kuda; i++) {
         const z = 0.3 + i * ((6 - 0.6) / (kuda - 1));
         // ikatan bawah (bottom chord) sepanjang dinding kiri-kanan
         this.addBox(this.trussGroup, 3, rBase + 0.05, z, 5.6, 0.075, 0.06, this.matBaja);
-        // dua kasau (top chord) naik ke ridge
-        const dx = 2.75;
-        const dy = apex - 0.12;
+        // dua kasau (top chord) naik ke ridge; ujung bawah menerus hingga tepi
+        // overstek sehingga reng & lisplank di ujung atap tetap bertumpu
+        const dx = 3 + ov - 0.06;
+        const dy = apex + ov * pitch - 0.12;
         const L = Math.hypot(dx, dy);
         const angR = Math.atan2(dy, dx);
-        const cyR = (rBase + 0.09 + yRidge - 0.03) / 2;
+        const cyR = (rBase + 0.09 - ov * pitch + yRidge - 0.03) / 2;
         // kiri: ujung +X (ridge) harus NAIK -> rotasi positif
         this.addTiltedBox(this.trussGroup, 3 - dx / 2, cyR, z, L, 0.075, 0.06, angR, this.matBaja);
         // kanan: ujung -X (ridge) naik -> rotasi negatif
@@ -755,12 +777,13 @@ export class HouseScene {
       }
 
       // reng: melintang sepanjang Z di atas kasau, jarak ~40 cm sepanjang bidang
+      // (top reng 1 cm di bawah muka genteng agar tidak z-fighting)
       for (const s of [-1, 1]) {
         for (let hx = 0.35; hx <= 3 + ov - 0.05; hx += 0.4) {
           this.addTiltedBox(
             this.trussGroup,
             3 + s * hx,
-            planeY(hx) + 0.075,
+            planeY(hx) + 0.065,
             3,
             0.05,
             0.05,
@@ -776,17 +799,28 @@ export class HouseScene {
         const x = 3 + s * (3 + ov) - s * 0.02;
         this.addBox(this.trussGroup, x, planeY(3 + ov) - 0.1, 3, 0.035, 0.2, zLen, this.matLisplank);
       }
+
+      // lisplank ujung pelana (menutup overstek pada kedua ujung segitiga atap)
+      const slopeLen = Math.hypot(3 + ov, apex + ov * pitch);
+      const yMidSlope = (yRidge + rBase - ov * pitch) / 2;
+      for (const s of [-1, 1]) {
+        for (const zz of [-ov + 0.017, 6 + ov - 0.017]) {
+          this.addTiltedBox(this.trussGroup, 3 + s * (3 + ov) / 2, yMidSlope, zz, slopeLen, 0.2, 0.034, s > 0 ? -ang : ang, this.matLisplank);
+        }
+      }
     }
 
     // ---------- genteng + nok ----------
     if (V.genteng) {
-      // genteng beton flat: baris sepanjang Z, tumpukan tiap ~40 cm sepanjang bidang
+      // genteng beton flat: pemasangan rapat (tile eksak baris demi baris sepanjang
+      // bidang sehingga tidak ada celah memperlihatkan reng maupun z-fighting)
       const dxTile = 0.4 * Math.cos(ang);
-      const tileL = dxTile * 1.04;
       const nRows = Math.max(2, Math.ceil((3 + ov) / dxTile));
-      const zCount = Math.max(2, Math.ceil(zLen / 0.26));
+      const rowSpacing = (3 + ov) / nRows; // panjang genteng = jarak baris (eksak)
+      const zCount = Math.max(2, Math.ceil(zLen / 0.25));
+      const zSpacing = zLen / zCount; // lebar genteng = jarak lajur (eksak)
       for (const s of [-1, 1]) {
-        const geo = new THREE.BoxGeometry(tileL, 0.02, 0.24);
+        const geo = new THREE.BoxGeometry(rowSpacing, 0.02, zSpacing);
         const im = new THREE.InstancedMesh(geo, this.matGenteng, nRows * zCount);
         im.castShadow = true;
         im.receiveShadow = true;
@@ -797,9 +831,9 @@ export class HouseScene {
         const base = new THREE.Color(0x96524a);
         let idx = 0;
         for (let i = 0; i < nRows; i++) {
-          const hx = (i + 0.5) * dxTile;
+          const hx = (i + 0.5) * rowSpacing;
           for (let jj = 0; jj < zCount; jj++) {
-            const z = -ov + (jj + 0.5) * (zLen / zCount);
+            const z = -ov + (jj + 0.5) * zSpacing;
             q.setFromAxisAngle(axis, s > 0 ? -ang : ang);
             m4.compose(
               new THREE.Vector3(3 + s * hx, planeY(hx) + 0.09, z),
@@ -808,28 +842,30 @@ export class HouseScene {
             );
             im.setMatrixAt(idx, m4);
             const r = mulberry32(idx * 2654435761 + (s > 0 ? 7 : 13))();
-            col.copy(base).offsetHSL(0.004 * (r - 0.5), 0.06 * (r - 0.5), 0.07 * (r - 0.5));
+            col.copy(base).offsetHSL(0.003 * (r - 0.5), 0.025 * (r - 0.5), 0.03 * (r - 0.5));
             im.setColorAt(idx, col);
             idx++;
           }
         }
         this.tilesGroup.add(im);
-        this.disposables.push(geo);
+        this.dyn.push(geo);
       }
 
       // nok (ridge cap) menutup pertemuan dua bidang genteng
-      const g = new THREE.BoxGeometry(0.3, 0.06, zLen + 0.04);
+      const g = new THREE.BoxGeometry(0.4, 0.09, zLen + 0.06);
       const nok = new THREE.Mesh(g, this.matRidge);
       nok.castShadow = true;
       nok.position.set(3, yRidge + 0.11, 3);
       this.tilesGroup.add(nok);
-      this.disposables.push(g);
+      this.dyn.push(g);
     }
   }
 
   // ---------------------------------------------------------- dimensi 3D --
 
   private rebuildDims() {
+    for (const d of this.dimsDyn) d.dispose();
+    this.dimsDyn.length = 0;
     this.clearGroup(this.dimsGroup);
     const m = this.lastModel;
     if (!this.dimsOn || !m) return;
@@ -866,7 +902,7 @@ export class HouseScene {
     const line = new THREE.Line(g, this.matDim);
     line.renderOrder = 999;
     this.dimsGroup.add(line);
-    this.disposables.push(g);
+    this.dimsDyn.push(g);
     const dir = new THREE.Vector3().subVectors(b, a).normalize();
     const perp = Math.abs(dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0).cross(dir).normalize();
     this.dimTick(a, perp);
@@ -884,7 +920,7 @@ export class HouseScene {
     const line = new THREE.Line(g, this.matDim);
     line.renderOrder = 999;
     this.dimsGroup.add(line);
-    this.disposables.push(g);
+    this.dimsDyn.push(g);
   }
 
   private makeDimSprite(text: string): THREE.Sprite {
@@ -907,9 +943,9 @@ export class HouseScene {
     }
     const tex = new THREE.CanvasTexture(cv);
     tex.anisotropy = 4;
-    this.disposables.push(tex);
+    this.dimsDyn.push(tex);
     const sm = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
-    this.disposables.push(sm);
+    this.dimsDyn.push(sm);
     const sp = new THREE.Sprite(sm);
     sp.scale.set(0.98, 0.26, 1);
     sp.renderOrder = 1000;
@@ -925,7 +961,7 @@ export class HouseScene {
     m.castShadow = true;
     m.receiveShadow = receive;
     parent.add(m);
-    this.disposables.push(g);
+    this.dyn.push(g);
     return m;
   }
 
@@ -938,7 +974,7 @@ export class HouseScene {
     m.castShadow = true;
     m.receiveShadow = true;
     parent.add(m);
-    this.disposables.push(g);
+    this.dyn.push(g);
     return m;
   }
 
@@ -972,9 +1008,9 @@ export class HouseScene {
     }
     const tex = new THREE.CanvasTexture(cv);
     tex.anisotropy = 4;
-    this.disposables.push(tex);
+    this.dyn.push(tex);
     const sm = new THREE.SpriteMaterial({ map: tex, depthTest: true, transparent: true });
-    this.disposables.push(sm);
+    this.dyn.push(sm);
     const sp = new THREE.Sprite(sm);
     sp.scale.set(1.9, 0.71, 1);
     return sp;
@@ -995,6 +1031,8 @@ export class HouseScene {
     this.canvas.removeEventListener("pointercancel", this.onUp);
     this.canvas.removeEventListener("wheel", this.onWheel);
     for (const d of this.disposables) d.dispose();
+    for (const d of this.dyn) d.dispose();
+    for (const d of this.dimsDyn) d.dispose();
     for (const m of [
       this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
       this.matPlinth, this.matBeton, this.matBuis, this.matLantai, this.matAtap, this.matBaja,

@@ -14,7 +14,7 @@ export function TampakSampingSheet({ model }: { model: HouseModel }) {
   const yR = model.roof.yRidge;
   const apex = model.roof.apexAdd;
   const top = yR + 0.35;
-  const bottom = -0.75;
+  const bottom = -0.5;
   const ML = 132;
   const MR = 128;
   const MT = 92;
@@ -75,8 +75,8 @@ export function TampakSampingSheet({ model }: { model: HouseModel }) {
           ))}
 
       {/* ---------- muka tanah + arsir ---------- */}
-      <line x1={sx(-ov) - 12} y1={sy(-0.55)} x2={sx(6 + ov) + 12} y2={sy(-0.55)} stroke={INK} strokeWidth={2.2} />
-      <rect x={sx(-ov) - 12} y={sy(-0.55)} width={(6 + 2 * ov) * S + 24} height={0.2 * S} fill="url(#samping-tanah)" />
+      <line x1={sx(-ov) - 12} y1={sy(-0.2)} x2={sx(6 + ov) + 12} y2={sy(-0.2)} stroke={INK} strokeWidth={2.2} />
+      <rect x={sx(-ov) - 12} y={sy(-0.2)} width={(6 + 2 * ov) * S + 24} height={0.2 * S} fill="url(#samping-tanah)" />
 
       {/* ---------- level & dimensi tinggi ---------- */}
       <LevelMark x={sx(-ov) - 58} y={sy(0)} label="±0,00" />
@@ -94,12 +94,12 @@ export function TampakSampingSheet({ model }: { model: HouseModel }) {
 
       {/* ---------- dimensi lebar ---------- */}
       <g>
-        <HDim xFrom={sx(-ov)} xTo={sx(0)} y={sy(-0.55) + 48} label={fmtM(ov)} above={false} />
-        <HDim xFrom={sx(0)} xTo={sx(6)} y={sy(-0.55) + 48} label="6,00" above={false} />
-        <HDim xFrom={sx(6)} xTo={sx(6 + ov)} y={sy(-0.55) + 48} label={fmtM(ov)} above={false} />
+        <HDim xFrom={sx(-ov)} xTo={sx(0)} y={sy(-0.2) + 48} label={fmtM(ov)} above={false} />
+        <HDim xFrom={sx(0)} xTo={sx(6)} y={sy(-0.2) + 48} label="6,00" above={false} />
+        <HDim xFrom={sx(6)} xTo={sx(6 + ov)} y={sy(-0.2) + 48} label={fmtM(ov)} above={false} />
         <g stroke={INK_FADED} strokeWidth={0.6}>
-          <line x1={sx(-ov)} y1={sy(-0.55) + 4} x2={sx(-ov)} y2={sy(-0.55) + 52} />
-          <line x1={sx(6 + ov)} y1={sy(-0.55) + 4} x2={sx(6 + ov)} y2={sy(-0.55) + 52} />
+          <line x1={sx(-ov)} y1={sy(-0.2) + 4} x2={sx(-ov)} y2={sy(-0.2) + 52} />
+          <line x1={sx(6 + ov)} y1={sy(-0.2) + 4} x2={sx(6 + ov)} y2={sy(-0.2) + 52} />
         </g>
       </g>
 
@@ -108,9 +108,9 @@ export function TampakSampingSheet({ model }: { model: HouseModel }) {
       <LeaderLabel x={sx(0.15)} y={sy(2.0)} toX={sx(0.6)} toY={sy(1.7)} text="DINDING BATA + PLESTER & CAT" anchor="end" />
       <LeaderLabel x={sx(4.6)} y={sy(1.4) - 22} toX={sx(4.5)} toY={sy(1.5)} text="JENDELA RANGKA KELUARGA (J4)" />
       <LeaderLabel x={sx(1.9)} y={sy(1.3)} toX={sx(0.9)} toY={sy(2.4)} text="ROSTER LUBANG ANGIN DAPUR" anchor="end" />
-      <LeaderLabel x={sx(0.15)} y={sy(t + 0.1) + 24} toX={sx(0.5)} toY={sy(t + 0.1)} text="RING BALK 15/20" anchor="end" />
-      <LeaderLabel x={sx(6.55)} y={sy(yEave + 0.15)} toX={sx(6.35)} toY={sy(yEave + 0.02)} text={`OVERSTEK ${fmtNum(ov * 100, 0)} cm`} />
-      <LeaderLabel x={sx(1.8)} y={sy(-0.28)} toX={sx(2.6)} toY={sy(-0.55)} text="MUKA TANAH -0,55" anchor="end" />
+      <LeaderLabel x={sx(2.1)} y={sy(t + 0.1) + 34} toX={sx(0.5)} toY={sy(t + 0.1)} text="RING BALK 15/20" anchor="start" />
+      <LeaderLabel x={sx(-0.55)} y={sy(yEave - 0.5)} toX={sx(-0.5)} toY={sy(yEave + 0.02)} text={`OVERSTEK ${fmtNum(ov * 100, 0)} cm`} anchor="end" />
+      <LeaderLabel x={sx(1.8)} y={sy(-0.05)} toX={sx(2.6)} toY={sy(-0.2)} text="MUKA TANAH -0,20" anchor="end" />
 
       <TitleBlock x={VW - 258} y={VH - 24} w={240} judul="TAMPAK SAMPING (KANAN)" kode="A-03" />
       <text x={16} y={VH - 21} fontSize={8} fill={INK_FADED}>
