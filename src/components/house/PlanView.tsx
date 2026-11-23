@@ -36,6 +36,50 @@ export function PlanView({ model }: { model: HouseModel }) {
             w.openings.map((o, idx) => {
               const key = `${w.id}-${idx}`;
               const kusen = 0.07;
+              if (o.kind === "vent") {
+                // lubang angin permanen: roster dengan kisi
+                const fr = 0.03;
+                if (w.axis === "h") {
+                  const y1 = px(w.c - w.t / 2);
+                  const y2 = px(w.c + w.t / 2);
+                  return (
+                    <g key={key}>
+                      <rect x={px(o.from)} y={y1} width={(o.to - o.from) * S} height={y2 - y1} fill="#e9e5db" />
+                      <rect x={px(o.from + fr)} y={y1 + 2} width={(o.to - o.from - 2 * fr) * S} height={y2 - y1 - 4} fill="#c9c3b6" />
+                      {[0.22, 0.5, 0.78].map((f) => (
+                        <line
+                          key={f}
+                          x1={px(o.from + fr + (o.to - o.from - 2 * fr) * f)}
+                          y1={y1 + 2}
+                          x2={px(o.from + fr + (o.to - o.from - 2 * fr) * f)}
+                          y2={y2 - 2}
+                          stroke="#8f8a80"
+                          strokeWidth={1}
+                        />
+                      ))}
+                    </g>
+                  );
+                }
+                const x1 = px(w.c - w.t / 2);
+                const x2 = px(w.c + w.t / 2);
+                return (
+                  <g key={key}>
+                    <rect x={x1} y={px(o.from)} width={x2 - x1} height={(o.to - o.from) * S} fill="#e9e5db" />
+                    <rect x={x1 + 2} y={px(o.from + fr)} width={x2 - x1 - 4} height={(o.to - o.from - 2 * fr) * S} fill="#c9c3b6" />
+                    {[0.22, 0.5, 0.78].map((f) => (
+                      <line
+                        key={f}
+                        x1={x1 + 2}
+                        y1={px(o.from + fr + (o.to - o.from - 2 * fr) * f)}
+                        x2={x2 - 2}
+                        y2={px(o.from + fr + (o.to - o.from - 2 * fr) * f)}
+                        stroke="#8f8a80"
+                        strokeWidth={1}
+                      />
+                    ))}
+                  </g>
+                );
+              }
               if (o.kind === "jendela") {
                 if (w.axis === "h") {
                   const y1 = px(w.c - w.t / 2);

@@ -1,10 +1,11 @@
 /**
  * Mesin perhitungan rumah 6x6 m (standar praktik Indonesia):
- * - definisi denah (dinding luar/dalam + bukaan pintu & jendela)
+ * - definisi denah (dinding luar/dalam + bukaan pintu, jendela & lubang angin permanen)
  * - generator susunan bata per lajur (batu demi batu, ikatan berselang)
  * - kalkulasi volume adukan/nat, luas bersih tiap ruangan, dan kuantitas RAB
- * - kuantitas struktur: galian, pondasi batu kali, sloof 15/20, kolom praktis
- *   15/15, ring balk 15/20, atap pelana (kuda-kuda, reng, genteng)
+ * - kuantitas struktur: galian, pondasi (batu kali strip ATAU cakar ayam sistem
+ *   Sedyatmo: pelat beton + buis), sloof 15/20, kolom praktis 15/15, ring balk
+ *   15/20, atap pelana (kuda-kuda, reng, genteng)
  *
  * Semua ukuran dalam meter kecuali disebutkan lain (nat dalam mm, atap dalam
  * derajat). Acuan praktik: SNI 8640:2018 (bata ringan), SNI 03-2965-1992
@@ -13,7 +14,7 @@
 
 export type Axis = "h" | "v"; // h: dinding membentang sepanjang sumbu X denah, v: sepanjang Y
 
-export type OpeningKind = "pintu" | "jendela";
+export type OpeningKind = "pintu" | "jendela" | "vent";
 
 export interface OpeningSpec {
   from: number; // koordinat absolut sepanjang sumbu dinding (meter)
@@ -68,6 +69,16 @@ function jendela(from: number, w: number, label: string, sill = JENDELA_SILL, to
   return { from, to: from + w, sill, top, kind: "jendela", label };
 }
 
+/**
+ * Lubang angin permanen (roster beton / kisi-kisi, tidak bisa ditutup).
+ * mode "atas": dekat puncak dinding (sill = tinggi dinding - 60 cm).
+ * mode "pelana": di segitiga dinding pelana untuk ventilasi rongga atap.
+ * (sill/top berupa sentinel; diselesaikan resolveVent saat model dibangun)
+ */
+function lubangAngin(from: number, label: string, w = 0.4, mode: "atas" | "pelana" = "atas"): OpeningSpec {
+  return { from, to: from + w, sill: mode === "atas" ? -2 : -1, top: -3, kind: "vent", label };
+}
+
 // dinding ujung pelana: apex dipusat (3,3); apexAdd dihitung dari kemiringan atap
 const GABLE = { apexAt: 3, apexAdd: 0, halfSpan: 3 };
 
@@ -83,6 +94,9 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(3.3, 0.6, "Jendela KM", 1.4, 2.0),
           jendela(4.9, 0.9, "Jendela dapur", 1.0, 2.0),
+          lubangAngin(2.4, "Lubang angin kamar 2"),
+          lubangAngin(4.05, "Lubang angin kamar mandi"),
+          lubangAngin(2.7, "Ventilasi rongga atap (belakang)", 0.6, "pelana"),
         ],
       },
       {
@@ -91,6 +105,8 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(1.0, 1.0, "Jendela kamar 1"),
           pintu(4.2, "Pintu utama"),
+          lubangAngin(5.55, "Lubang angin ruang keluarga"),
+          lubangAngin(2.7, "Ventilasi rongga atap (depan)", 0.6, "pelana"),
         ],
       },
       {
@@ -99,12 +115,13 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(1.0, 1.0, "Jendela kamar 2"),
           jendela(4.0, 1.0, "Jendela kamar 1"),
+          lubangAngin(5.35, "Lubang angin kamar 1"),
         ],
       },
       {
         id: "kanan", name: "Dinding sisi kanan", axis: "v", edge: 6,
         from: (t) => t.tL, to: (t) => 6 - t.tL, outer: true,
-        openings: [jendela(3.9, 1.2, "Jendela ruang keluarga")],
+        openings: [jendela(3.9, 1.2, "Jendela ruang keluarga"), lubangAngin(0.7, "Lubang angin dapur")],
       },
       {
         id: "w5", name: "Sekat kamar (vertikal)", axis: "v", pos: 3,
@@ -146,12 +163,19 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(1.0, 1.0, "Jendela dapur"),
           jendela(5.1, 0.6, "Jendela KM", 1.4, 2.0),
+          lubangAngin(2.6, "Lubang angin ruang studio"),
+          lubangAngin(2.7, "Ventilasi rongga atap (belakang)", 0.6, "pelana"),
         ],
       },
       {
         id: "depan", name: "Dinding depan", axis: "h", edge: 6,
         from: 0, to: 6, outer: true, gable: GABLE,
-        openings: [pintu(2.5, "Pintu utama"), jendela(4.3, 1.3, "Jendela depan")],
+        openings: [
+          pintu(2.5, "Pintu utama"),
+          jendela(4.3, 1.3, "Jendela depan"),
+          lubangAngin(1.3, "Lubang angin ruang studio"),
+          lubangAngin(2.7, "Ventilasi rongga atap (depan)", 0.6, "pelana"),
+        ],
       },
       {
         id: "kiri", name: "Dinding sisi kiri", axis: "v", edge: 0,
@@ -164,6 +188,8 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(0.5, 0.6, "Jendela KM", 1.4, 2.0),
           jendela(2.9, 1.5, "Jendela studio"),
+          lubangAngin(1.6, "Lubang angin kamar mandi"),
+          lubangAngin(5.0, "Lubang angin dapur"),
         ],
       },
       {
@@ -229,10 +255,22 @@ export interface KolomRT {
   y: number;
 }
 
+/** Kuantitas pondasi cakar ayam (pelat + buis beton) dari model 3D. */
+export interface CakarAyamRT {
+  slabM3: number; // volume pelat beton
+  buisCount: number; // jumlah buis tertanam
+  buisM3: number; // volume beton buis (pipa)
+  uruganM3: number; // urugan pasir lantai kerja
+  galianM3: number; // galian lubang buis + perataan bed
+  betonM3: number; // total beton pelat + buis
+  buisPts: { x: number; y: number }[]; // posisi buis (koordinat denah)
+}
+
 export interface HouseConfig {
   preset: string;
   tinggi: number;
   jenis: "hebel" | "merah";
+  pondasi: "batukali" | "cakarayam";
   tLuar: number; // mm
   tDalam: number; // mm
   natMm: number;
@@ -258,10 +296,25 @@ export const PONDASI_W = 0.4; // lebar pondasi batu kali strip (m)
 export const PONDASI_D = 0.6; // kedalaman pondasi (m)
 export const KUDA_SPACING = 1.2; // jarak kuda-kuda baja ringan (m)
 
+/**
+ * Pondasi cakar ayam (sistem Sedyatmo): pelat beton bertulang tipis yang
+ * ditopang buis-buis beton vertikal menancap ke tanah. Jarak buis untuk rumah
+ * tinggal lazim 2,5-3 m; di model ini buis diletakkan di tiap titik kolom
+ * praktis + grid tengah (jarak maks ~3 m).
+ */
+export const CAKAR = {
+  slabT: 0.1, // tebal pelat beton (m)
+  buisDia: 0.4, // diameter buis beton (m)
+  buisWall: 0.05, // tebal dinding buis (m)
+  buisL: 0.8, // panjang buis tertanam (m)
+  bed: 0.05, // tebal pasir lantai kerja di bawah pelat (m)
+} as const;
+
 export const DEFAULT_CONFIG: HouseConfig = {
   preset: "2br",
   tinggi: 3.0,
   jenis: "hebel",
+  pondasi: "batukali",
   tLuar: 100,
   tDalam: 75,
   natMm: 3,
@@ -308,6 +361,27 @@ function subtractIntervals(base: Interval, cuts: Interval[]): Interval[] {
   return pieces.filter((p) => p.hi - p.lo > 0.015); // buang irisan sangat tipis
 }
 
+/**
+ * Selesaikan sentinel lubang angin menjadi elevasi nyata.
+ * "atas"  -> sill = tinggi dinding - 60 cm (dekat puncak dinding, di bawah ring balk)
+ * "pelana"-> di segitiga pelana, menjorok sedikit di bawah puncak apex
+ */
+function resolveVent(
+  o: OpeningSpec,
+  t: { rbTop: number; apexAdd: number; tinggi: number },
+): OpeningSpec | null {
+  if (o.kind !== "vent") return o;
+  const hgt = Math.min(0.22, o.to - o.from); // tinggi roster (maks 22 cm)
+  if (o.sill === -1) {
+    const cap = t.rbTop + t.apexAdd;
+    const top = cap - 0.16;
+    const sill = top - hgt;
+    return sill < t.rbTop + 0.12 ? null : { ...o, sill, top }; // pelana terlalu landai
+  }
+  const sill = t.tinggi - 0.6;
+  return { ...o, sill, top: sill + hgt };
+}
+
 // ----------------------------------------------------------------- engine --
 
 export interface HouseModel {
@@ -341,7 +415,7 @@ export interface HouseModel {
     plasterArea: number;
     wallFootprint: number;
   };
-  openings: { doors: number; windows: number; windowAreaM2: number };
+  openings: { doors: number; windows: number; vents: number; windowAreaM2: number };
   vent: { bukaanM2: number; pctLantai: number; okSni: boolean; okIdeal: boolean };
   roof: {
     areaM2: number;
@@ -364,6 +438,7 @@ export interface HouseModel {
     ringbalkM3: number;
     lisplankM: number;
     talangM: number;
+    cakar: CakarAyamRT | null;
   };
 }
 
@@ -410,7 +485,10 @@ export function buildModel(config: HouseConfig): HouseModel {
       t,
       h: config.tinggi,
       gable: spec.gable ? { ...spec.gable, apexAdd, baseZ: rbTop } : undefined,
-      openings: spec.openings.filter((o) => o.to > lo && o.from < hi && o.top > 0.2),
+      openings: spec.openings
+        .map((o) => resolveVent(o, { rbTop, apexAdd, tinggi: config.tinggi }))
+        .filter((o): o is OpeningSpec => !!o)
+        .filter((o) => o.to > lo && o.from < hi && o.top > 0.2),
       outer: spec.outer,
       explodeDir,
     };
@@ -579,14 +657,40 @@ export function buildModel(config: HouseConfig): HouseModel {
 
   const doors = walls.reduce((s, w) => s + w.openings.filter((o) => o.kind === "pintu").length, 0);
   const windows = walls.reduce((s, w) => s + w.openings.filter((o) => o.kind === "jendela").length, 0);
+  const vents = walls.reduce((s, w) => s + w.openings.filter((o) => o.kind === "vent").length, 0);
   const windowAreaM2 = walls.reduce(
     (s, w) => s + w.openings.filter((o) => o.kind === "jendela").reduce((a, o) => a + (o.to - o.from) * (o.top - o.sill), 0),
     0,
   );
 
-  // ----- kuantitas struktur
-  const galianM3 = wallLenTotal * PONDASI_D * 0.5; // galian lebar 50 cm
-  const pondasiM3 = wallLenTotal * PONDASI_W * PONDASI_D;
+  // ----- pondasi cakar ayam: buis di tiap titik kolom + grid tengah (jarak maks ~3 m)
+  let cakar: CakarAyamRT | null = null;
+  if (config.pondasi === "cakarayam") {
+    const pts: { x: number; y: number }[] = koloms.map((k) => ({ x: k.x, y: k.y }));
+    for (const gx of [1.5, 4.5]) for (const gy of [1.5, 4.5]) pts.push({ x: gx, y: gy });
+    const buisPts: { x: number; y: number }[] = [];
+    for (const p of pts) {
+      if (!buisPts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 0.45)) buisPts.push(p);
+    }
+    const rOut = CAKAR.buisDia / 2;
+    const rIn = rOut - CAKAR.buisWall;
+    const buisM3 = buisPts.length * Math.PI * (rOut * rOut - rIn * rIn) * CAKAR.buisL;
+    const slabM3 = 36 * CAKAR.slabT;
+    cakar = {
+      slabM3,
+      buisCount: buisPts.length,
+      buisM3,
+      uruganM3: 36 * CAKAR.bed,
+      galianM3: 36 * CAKAR.bed + buisPts.length * Math.PI * rOut * rOut * CAKAR.buisL,
+      betonM3: slabM3 + buisM3,
+      buisPts,
+    };
+  }
+
+  // ----- kuantitas struktur (galian & pondasi mengikuti jenis pondasi)
+  const galianM3 =
+    config.pondasi === "cakarayam" && cakar ? cakar.galianM3 : wallLenTotal * PONDASI_D * 0.5; // galian lebar 50 cm
+  const pondasiM3 = config.pondasi === "cakarayam" ? 0 : wallLenTotal * PONDASI_W * PONDASI_D;
   const sloofM3 = wallLenTotal * SLOOF_W * RB_H;
   const kolomM3 = koloms.length * KOLOM_S * KOLOM_S * (config.tinggi + RB_H);
   const ringbalkM3 = wallLenTotal * SLOOF_W * RB_H;
@@ -624,7 +728,7 @@ export function buildModel(config: HouseConfig): HouseModel {
       plasterArea: wallFace * 2,
       wallFootprint,
     },
-    openings: { doors, windows, windowAreaM2 },
+    openings: { doors, windows, vents, windowAreaM2 },
     vent: {
       bukaanM2: windowAreaM2,
       pctLantai: (windowAreaM2 / Math.max(0.01, netFloor)) * 100,
@@ -634,7 +738,7 @@ export function buildModel(config: HouseConfig): HouseModel {
     roof: { areaM2: roofArea, apexAdd, overhang: ov, deg: config.atapDeg, pitch, yRidge, kudaKuda, rengPerSlope, gentengPcs },
     wallLenTotal,
     koloms,
-    structure: { galianM3, pondasiM3, sloofM3, kolomM3, ringbalkM3, lisplankM, talangM },
+    structure: { galianM3, pondasiM3, sloofM3, kolomM3, ringbalkM3, lisplankM, talangM, cakar },
   };
 }
 
@@ -673,6 +777,8 @@ export const DEFAULT_PRICES: PriceBook = {
   bouwplank: 350000,
   galian: 110000,
   pondasi: 950000,
+  urugan: 180000,
+  cakarBeton: 2200000,
   sloof: 2000000,
   kolom: 2100000,
   ringbalk: 2000000,
@@ -686,6 +792,7 @@ export const DEFAULT_PRICES: PriceBook = {
   semen: 68000,
   pasir: 350000,
   plesteran: 95000,
+  lubangAngin: 60000,
   rangkaAtap: 135000,
   genteng: 60000,
   lisplank: 45000,
@@ -734,8 +841,15 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
 
   push("bouwplank", "d1", "Pengukuran & bouwplank", "Profil kayu + patok as bangunan", 1, "lot", false);
 
-  push("galian", "d2", "Galian tanah pondasi + urugan kembali", "Galian lebar 50 cm sedalam 60 cm sepanjang dinding", Math.ceil(model.structure.galianM3 * 10) / 10, "m3", true);
-  push("pondasi", "d2", "Pondasi batu kali + campuran 1:5", "Strip 40 x 60 cm (kedalaman 60 cm)", Math.ceil(model.structure.pondasiM3 * 10) / 10, "m3", true);
+  if (cfg.pondasi === "cakarayam" && model.structure.cakar) {
+    const c = model.structure.cakar;
+    push("galian", "d2", "Galian titik buis + lantai kerja pelat", "Lubang buis Ø40 cm sedalam 80 cm + perataan 5 cm di seluruh pelat", Math.ceil(c.galianM3 * 10) / 10, "m3", true);
+    push("urugan", "d2", "Urugan pasir bawah pelat", "Pasir setempat 5 cm, dipadatkan sebelum cor pelat", Math.ceil(c.uruganM3 * 10) / 10, "m3", true, "urugan");
+    push("cakarBeton", "d2", "Pondasi cakar ayam (sistem Sedyatmo)", `Pelat 6x6 m tebal 10 cm wiremesh D8 + ${c.buisCount} buis beton Ø40 cm panjang 80 cm, cor monolit`, Math.ceil(c.betonM3 * 100) / 100, "m3", true, "cakarBeton");
+  } else {
+    push("galian", "d2", "Galian tanah pondasi + urugan kembali", "Galian lebar 50 cm sedalam 60 cm sepanjang dinding", Math.ceil(model.structure.galianM3 * 10) / 10, "m3", true);
+    push("pondasi", "d2", "Pondasi batu kali + campuran 1:5", "Strip 40 x 60 cm (kedalaman 60 cm)", Math.ceil(model.structure.pondasiM3 * 10) / 10, "m3", true);
+  }
 
   push("sloof", "d3", "Sloof beton bertulang 15/20", "Beton K225, tulangan 6D10, begel Ø8-150", Math.ceil(model.structure.sloofM3 * 100) / 100, "m3", true);
   push("kolom", "d3", "Kolom praktis beton 15/15", "4D10, begel Ø6-200, jarak maks 3 m", Math.ceil(model.structure.kolomM3 * 100) / 100, "m3", true);
@@ -756,6 +870,8 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
     push("plesteran", "d4", "Plesteran + aci (2 sisi dinding)", "Campuran 1:5 tebal 10-15 mm", Math.ceil(model.areas.plasterArea * 10) / 10, "m2", true);
   }
 
+  push("lubangAngin", "d4", "Lubang angin permanen (roster beton + pasang)", "Roster beton 20x20 cm di dinding & dinding pelana; ventilasi tetap terbuka", model.openings.vents, "buah", true, "lubangAngin");
+
   push("rangkaAtap", "d5", "Rangka atap baja ringan C75 + reng", `${model.roof.kudaKuda} kuda-kuda, jarak ${KUDA_SPACING} m, borongan pasang`, Math.ceil(model.roof.areaM2), "m2", true);
   push("genteng", "d5", "Genteng beton flat + pasang", `10 pcs/m2 (${model.roof.gentengPcs} pcs), kemiringan ${cfg.atapDeg} derajat`, Math.ceil(model.roof.areaM2), "m2", true);
   push("lisplank", "d5", "Lisplank", "Papan penutup ujung rangka atap", Math.ceil(model.structure.lisplankM * 10) / 10, "m1", true);
@@ -765,8 +881,8 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
   push("rabat", "d6", "Rabat beton lantai kerja", "Tebal 10 cm di atas luas bersih lantai", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
   push("keramik", "d6", "Keramik lantai + pemasangan", "40x40 cm golongan menengah", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
 
-  push("pintu", "d7", "Kusen + daun pintu lengkap", "Kayu 6x15 cm + daun panel + kunci", model.openings.doors, "unit", false);
-  push("jendela", "d7", "Kusen + kaca jendela", "Aluminium + kaca 5 mm", model.openings.windows, "unit", false);
+  push("pintu", "d7", "Kusen + daun pintu lengkap", "Kusen kayu berprofil + daun panel 2 susun + kunci handle + angkur", model.openings.doors, "unit", false);
+  push("jendela", "d7", "Kusen + kaca jendela", "Kusen aluminium profil + kaca 5 mm + palang tengah + roster vent", model.openings.windows, "unit", false);
 
   push("listrikAir", "d8", "Instalasi listrik & air bersih/limbah", "Titik lampu + stop kontak, MCB, pipa air & kotoran", 1, "borongan", false);
 

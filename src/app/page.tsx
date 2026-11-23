@@ -19,14 +19,16 @@ import { SceneCanvas } from "@/components/house/SceneCanvas";
 import { PlanView } from "@/components/house/PlanView";
 import { RabPanel } from "@/components/house/RabPanel";
 import { ArchitectureGuide } from "@/components/house/ArchitectureGuide";
+import { CONSTRUCTION_STAGES } from "@/lib/house/knowledge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { BrickWall, DraftingCompass, HardHat, Info, Layers, Ruler, Wallet } from "lucide-react";
+import { BrickWall, ClipboardCheck, DraftingCompass, HardHat, Info, Layers, ListOrdered, PaintBucket, Ruler, Wallet } from "lucide-react";
 
 export default function Home() {
   const [config, setConfig] = useState<HouseConfig>(DEFAULT_CONFIG);
@@ -37,8 +39,11 @@ export default function Home() {
     showRangka: true,
     showStruktur: true,
     showLabels: false,
+    showFinishing: false,
     explode: 0,
     cutH: 1000,
+    stage: 0,
+    paintHex: "#f2ecdf",
   });
 
   const model = useMemo(() => buildModel(config), [config]);
@@ -52,13 +57,14 @@ export default function Home() {
 
   const gantiJenis = (jenis: "hebel" | "merah") => {
     if (jenis === "hebel") {
-      setConfig((c) => ({ ...DEFAULT_CONFIG, preset: c.preset, tinggi: c.tinggi, atapDeg: c.atapDeg, overhang: c.overhang }));
+      setConfig((c) => ({ ...DEFAULT_CONFIG, preset: c.preset, tinggi: c.tinggi, pondasi: c.pondasi, atapDeg: c.atapDeg, overhang: c.overhang }));
     } else {
-      setConfig((c) => ({ ...DEFAULT_CONFIG_MERAH, preset: c.preset, tinggi: c.tinggi, atapDeg: c.atapDeg, overhang: c.overhang }));
+      setConfig((c) => ({ ...DEFAULT_CONFIG_MERAH, preset: c.preset, tinggi: c.tinggi, pondasi: c.pondasi, atapDeg: c.atapDeg, overhang: c.overhang }));
     }
   };
 
   const thickOptions = config.jenis === "hebel" ? HEBEL_THICK : MERAH_THICK;
+  const stageSel = view.stage > 0 ? CONSTRUCTION_STAGES.find((s) => s.no === view.stage) ?? null : null;
   const natLabel =
     config.jenis === "hebel" ? "Tebal perekat hebel (nat)" : "Tebal nat / spesi pasangan";
   const natRange = config.jenis === "hebel" ? { min: 1, max: 6, step: 0.5 } : { min: 5, max: 20, step: 0.5 };
@@ -73,7 +79,7 @@ export default function Home() {
           <div className="min-w-0">
             <h1 className="truncate text-lg font-bold tracking-tight text-stone-900">Prototype 3D Rumah 6 x 6 m</h1>
             <p className="text-xs text-stone-500">
-              Referensi teknis arsitektur Indonesia: susunan bata batu demi batu, struktur (pondasi-sloof-kolom-ring balk), atap pelana, dan RAB per divisi pekerjaan
+              Referensi teknis arsitektur Indonesia: susunan bata batu demi batu, struktur (pondasi-sloof-kolom-ring balk), atap pelana, tahapan konstruksi bertahap, dan RAB per divisi pekerjaan
             </p>
           </div>
         </div>
@@ -118,6 +124,24 @@ export default function Home() {
                     <SelectItem value="merah">Bata merah 20 x 10 x 5 cm</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="pondasi">Jenis pondasi</Label>
+                <Select value={config.pondasi} onValueChange={(v) => set("pondasi", v as HouseConfig["pondasi"])}>
+                  <SelectTrigger id="pondasi" className="w-full">
+                    <SelectValue placeholder="Pilih jenis pondasi" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="batukali">Batu kali strip 40 x 60 cm</SelectItem>
+                    <SelectItem value="cakarayam">Cakar ayam (pelat + buis beton)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-relaxed text-stone-500">
+                  {config.pondasi === "cakarayam"
+                    ? "Sistem Sedyatmo: pelat beton 6x6 m + buis beton menancap — galian jauh lebih hemat & unggul di tanah lunak/berair."
+                    : "Paling ekonomis untuk tanah keras; galian selebar 50 cm sepanjang jalur dinding."}
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -232,23 +256,23 @@ export default function Home() {
               <SceneCanvas model={model} view={{ ...view, cutH: cutActive ? cutHClamped : 1000 }} />
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2">
+                <div className={`flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2 ${view.stage > 0 ? "opacity-50" : ""}`}>
                   <Label htmlFor="showRoof" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
                     Genteng
                   </Label>
-                  <Switch id="showRoof" checked={view.showRoof} onCheckedChange={(v) => setView((s) => ({ ...s, showRoof: v }))} />
+                  <Switch id="showRoof" checked={view.showRoof} disabled={view.stage > 0} onCheckedChange={(v) => setView((s) => ({ ...s, showRoof: v }))} />
                 </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2">
+                <div className={`flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2 ${view.stage > 0 ? "opacity-50" : ""}`}>
                   <Label htmlFor="showRangka" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
                     Rangka atap
                   </Label>
-                  <Switch id="showRangka" checked={view.showRangka} onCheckedChange={(v) => setView((s) => ({ ...s, showRangka: v }))} />
+                  <Switch id="showRangka" checked={view.showRangka} disabled={view.stage > 0} onCheckedChange={(v) => setView((s) => ({ ...s, showRangka: v }))} />
                 </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2">
+                <div className={`flex items-center justify-between gap-3 rounded-md border border-stone-200 px-3 py-2 ${view.stage > 0 ? "opacity-50" : ""}`}>
                   <Label htmlFor="showStruktur" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">
                     Sloof/kolom/ring balk
                   </Label>
-                  <Switch id="showStruktur" checked={view.showStruktur} onCheckedChange={(v) => setView((s) => ({ ...s, showStruktur: v }))} />
+                  <Switch id="showStruktur" checked={view.showStruktur} disabled={view.stage > 0} onCheckedChange={(v) => setView((s) => ({ ...s, showStruktur: v }))} />
                 </div>
                 <div className="rounded-md border border-stone-200 px-3.5 py-2">
                   <div className="flex justify-between text-xs">
@@ -263,6 +287,81 @@ export default function Home() {
                     <span className="tabular-nums text-stone-500">{cutActive ? `${fmtNum(cutHClamped, 2)} m` : "nonaktif"}</span>
                   </div>
                   <Slider className="mt-2" value={[cutHClamped]} min={0.3} max={maxCut} step={0.05} onValueChange={(v) => setView((s) => ({ ...s, cutH: v[0] }))} />
+                </div>
+              </div>
+
+              {/* -------------------------------- tahapan pembangunan -- */}
+              <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+                    <ListOrdered className="h-4 w-4 text-amber-700" aria-hidden /> Tahapan pembangunan (simulasi kondisi lapangan)
+                  </div>
+                  {view.stage > 0 && (
+                    <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setView((s) => ({ ...s, stage: 0 }))}>
+                      Kembali ke tampilan lengkap
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <StagePill active={view.stage === 0} onClick={() => setView((s) => ({ ...s, stage: 0 }))}>
+                    Selesai (semua)
+                  </StagePill>
+                  {CONSTRUCTION_STAGES.map((st) => (
+                    <StagePill key={st.no} active={view.stage === st.no} onClick={() => setView((s) => ({ ...s, stage: st.no }))}>
+                      {st.no}. {st.nama}
+                    </StagePill>
+                  ))}
+                </div>
+                {stageSel ? (
+                  <div className="mt-2 space-y-2 rounded-md bg-white/80 p-2.5">
+                    <p className="text-xs leading-relaxed text-stone-600">
+                      <span className="font-semibold text-stone-800">Kondisi tahap {stageSel.no} — {stageSel.nama}</span> · durasi {stageSel.durasi}. {stageSel.deskripsi}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <ClipboardCheck className="h-3.5 w-3.5 text-emerald-700" aria-hidden />
+                      {stageSel.cek.map((c) => (
+                        <span key={c} className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] leading-4 text-emerald-800">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs leading-relaxed text-stone-500">
+                    Pilih tahap untuk melihat kondisi rumah saat pondasi dulu, lanjut pembangunan dinding, dan seterusnya hingga cat &amp; finishing — urutan sesuai praktik konstruksi Indonesia.
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-amber-200/70 pt-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="showFinishing" className="text-xs font-medium leading-snug text-stone-700">
+                      Plester + cat (finishing)
+                    </Label>
+                    <Switch
+                      id="showFinishing"
+                      checked={view.showFinishing}
+                      disabled={view.stage > 0}
+                      onCheckedChange={(v) => setView((s) => ({ ...s, showFinishing: v }))}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-stone-700">
+                      <PaintBucket className="h-3.5 w-3.5 text-amber-700" aria-hidden /> Warna cat eksterior:
+                    </span>
+                    {PAINTS.map((p) => (
+                      <button
+                        key={p.hex}
+                        type="button"
+                        title={p.name}
+                        aria-label={`Warna cat ${p.name}`}
+                        onClick={() => setView((s) => ({ ...s, paintHex: p.hex }))}
+                        className={`h-6 w-6 rounded-full border border-stone-300 shadow-sm transition ${
+                          view.paintHex === p.hex ? "ring-2 ring-amber-700 ring-offset-1" : "hover:scale-110"
+                        }`}
+                        style={{ background: p.hex }}
+                      />
+                    ))}
+                    <span className="text-[10px] text-stone-400">terlihat pada tahap 7-8 atau switch finishing</span>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -302,7 +401,7 @@ export default function Home() {
             icon={<Wallet className="h-4 w-4" aria-hidden />}
             title="Estimasi total RAB"
             value={fmtRp(rab.total)}
-            desc={`${fmtRp(rab.perM2Net)} per m2 luas bersih | ${model.openings.doors} pintu, ${model.openings.windows} jendela, ${model.koloms.length} kolom praktis, ${model.roof.kudaKuda} kuda-kuda`}
+            desc={`${fmtRp(rab.perM2Net)} per m2 luas bersih | ${model.openings.doors} pintu, ${model.openings.windows} jendela, ${model.openings.vents} lubang angin, ${model.koloms.length} kolom${config.pondasi === "cakarayam" && model.structure.cakar ? `, ${model.structure.cakar.buisCount} buis cakar ayam` : ""}, ${model.roof.kudaKuda} kuda-kuda`}
           />
         </div>
 
@@ -347,8 +446,12 @@ export default function Home() {
             </div>
             <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-stone-600">
               <li>
-                Kuantitas bata, volume adukan, luas dinding, luas bersih, galian, pondasi, sloof, kolom praktis, ring balk, lisplank, dan atap dihitung langsung dari model 3D
+                Kuantitas bata, volume adukan, luas dinding, luas bersih, galian, pondasi (batu kali ATAU cakar ayam: pelat + buis), sloof, kolom praktis, ring balk, lubang angin permanen, lisplank, dan atap dihitung langsung dari model 3D
                 (dinding pelana ikut dihitung di atas ring balk); rabat, keramik, plafon, kusen, instalasi, dan finishing adalah estimasi yang bisa diubah harganya pada tabel RAB.
+              </li>
+              <li>
+                Fitur Tahapan Pembangunan menyimulasikan kondisi konstruksi bertahap: pondasi → sloof & kolom → dinding & kusen → ring balk & pelana → rangka atap → genteng → plester → cat.
+                Kusen digambar berprofil (tiang + ambang + lis dalam), daun pintu panel 2 susun, jendela kaca berkayu-batan aluminium, dan lubang angin permanen memakai roster beton.
               </li>
               <li>
                 Ukuran bata: hebel AAC 60 x 20 cm sesuai SNI 8640:2018 (tebal 7,5-20 cm); bata merah 20 x 10 x 5 cm pasangan 1/2 batu. Nat hebel 2-3 mm memakai perekat instan
@@ -356,14 +459,15 @@ export default function Home() {
                 8-10 zak semen per 1.000 bata — pemakaian nyata bisa lebih boros dari hitungan geometris; naikkan tebal nat atau waste untuk mensimulasikannya.
               </li>
               <li>
-                Struktur mengikuti praktik rumah sederhana 1 lantai: pondasi batu kali strip 40 x 60 cm, sloof & ring balk beton 15/20, kolom praktis 15/15 di tiap simpul dinding
+                Struktur mengikuti praktik rumah sederhana 1 lantai: pondasi batu kali strip 40 x 60 cm (alternatif cakar ayam sistem Sedyatmo — pelat beton 6x6 m tebal 10 cm +
+                buis beton Ø40 cm menancap 80 cm di jarak ±3 m, cocok untuk tanah lunak/berair), sloof & ring balk beton 15/20, kolom praktis 15/15 di tiap simpul dinding
                 (jarak maks 3 m), kuda-kuda baja ringan C75 jarak 1,2 m, reng 40 cm, genteng beton flat 10 pcs/m2, kemiringan atap ideal 30-40 derajat.
               </li>
               <li>
-                Bata di sekitar kolom praktis tidak dipotong pada model (kolom ditempel menonjol); volume bata di dalam bidang kolom tertutup oleh waste. Harga satuan per November 2025
-                (kisaran pasar daring): hebel 7,5 cm sekitar Rp7.500/buah dan 10 cm sekitar Rp9.000/buah; bata merah Rp700-950/buah; semen 50 kg Rp57.000-67.000/zak; pasir pasang
-                sekitar Rp350.000/m3; perekat hebel 40 kg Rp69.000-75.000/zak; rangka baja ringan C75 + reng sekitar Rp135.000/m2; genteng beton flat sekitar Rp6.000/buah (10 buah/m2);
-                beton bertulang sloof/kolom Rp1,9-2,1 juta/m3. Selalu cek harga toko material setempat sebelum membangun.
+                Harga satuan per November 2025 (kisaran pasar daring): hebel 7,5 cm sekitar Rp7.500/buah dan 10 cm sekitar Rp9.000/buah; bata merah Rp700-950/buah; semen 50 kg
+                Rp57.000-67.000/zak; pasir pasang sekitar Rp350.000/m3; perekat hebel 40 kg Rp69.000-75.000/zak; roster lubang angin beton 20x20 Rp10.000-50.000/buah;
+                rangka baja ringan C75 + reng sekitar Rp135.000/m2; genteng beton flat sekitar Rp6.000/buah (10 buah/m2); beton bertulang sloof/kolom Rp1,9-2,1 juta/m3
+                (cakar ayam Rp2,2 juta/m3 termasuk wiremesh & bekisting). Selalu cek harga toko material setempat sebelum membangun.
               </li>
               <li>
                 Angka aplikasi ini untuk perencanaan awal (prototype), bukan gambar kerja tersertifikasi. Konsultasikan struktur (pondasi, sloof, kolom, ring balk) dengan arsitek/insinyur
@@ -396,5 +500,28 @@ function StatChip({ icon, title, value, desc }: { icon: React.ReactNode; title: 
         <div className="mt-1 text-[11px] leading-relaxed text-stone-500">{desc}</div>
       </CardContent>
     </Card>
+  );
+}
+
+const PAINTS: { hex: string; name: string }[] = [
+  { hex: "#f2ecdf", name: "Ivory (krem terang)" },
+  { hex: "#ccd8c2", name: "Sage (hijau sage)" },
+  { hex: "#d8b294", name: "Terracotta" },
+  { hex: "#bdd2e2", name: "Biru langit pucat" },
+];
+
+function StagePill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium leading-4 transition ${
+        active
+          ? "border-amber-700 bg-amber-700 text-white shadow-sm"
+          : "border-stone-300 bg-white text-stone-600 hover:border-amber-600 hover:text-amber-800"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

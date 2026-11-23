@@ -31,7 +31,7 @@ export const TAHAPAN_PEKERJAAN: TahapanPekerjaan[] = [
     nama: "Pondasi & galian",
     durasi: "1-2 minggu",
     detail:
-      "Galian tanah sedalam 60-80 cm selebar 50 cm di jalur dinding, urugan pasir/pasir batu 10 cm, lalu pasang pondasi batu kali strip 40 x 60 cm dengan campuran 1:5 (semen : pasir). Untuk tanah lunak/berair pertimbangkan footplate (bakar 80x80) di bawah kolom.",
+      "Galian tanah sedalam 60-80 cm selebar 50 cm di jalur dinding, urugan pasir/pasir batu 10 cm, lalu pasang pondasi batu kali strip 40 x 60 cm dengan campuran 1:5 (semen : pasir). Untuk tanah lunak/berair pertimbangkan footplate (bakar 80x80) di bawah kolom, atau pondasi cakar ayam (pelat beton + buis beton) yang galiannya jauh lebih sedikit.",
     cekMutu: [
       "Kedalaman galian seragam, dasar padat (tanah urug dibuang)",
       "Batu kali dipasang bertumpuk dan terikat adukan, tidak ada rongga besar",
@@ -147,12 +147,13 @@ export const DETAIL_ELEMEN: DetailElemen[] = [
   {
     id: "pondasi",
     judul: "Pondasi",
-    ringkas: "Pondasi batu kali strip 40 x 60 cm untuk rumah 1 lantai di tanah keras.",
+    ringkas: "Pondasi batu kali strip 40 x 60 cm untuk rumah 1 lantai di tanah keras; atau cakar ayam untuk tanah lunak.",
     poin: [
       "Rumah 1 lantai dinding bata ringan: pondasi batu kali strip 40-60 cm lebar, kedalaman 60-80 cm.",
       "Galian dibawah muka tanah keras; tambah urugan pasir 10 cm sebagai lantai kerja.",
       "Campuran pondasi 1 zak semen : 5 pasir (1:5), batu belah/batu kali diaduk penuh.",
-      "Tanah lunak/daerah berair: gunakan footplate beton bertulang di titik kolom (mis. 80x80 cm) atau pondasi Sumuran.",
+      "Alternatif pondasi cakar ayam (sistem Sedyatmo, penemu insinyur Indonesia): pelat beton bertulang 6x6 m tebal 7,5-10 cm + buis beton vertikal Ø40 cm menancap 60-100 cm pada jarak 2,5-3 m. Galian jauh lebih sedikit dan menang di tanah lunak/berair, namun betonnya lebih mahal dari batu kali.",
+      "Tanah lunak/daerah berair: gunakan footplate beton bertulang di titik kolom (mis. 80x80 cm) atau pondasi Sumuran bila tidak memakai cakar ayam.",
       "Puncak pondasi +5 cm di bawah level lantai (tempat dudukan sloof).",
     ],
   },
@@ -255,6 +256,42 @@ export const DETAIL_ELEMEN: DetailElemen[] = [
     ],
   },
   {
+    id: "kusen",
+    judul: "Kusen pintu & jendela",
+    ringkas: "Kusen kayu berprofil (tiang + ambang + lis) atau aluminium; ditanam bersama pasangan dinding.",
+    poin: [
+      "Kusen kayu kamper/merbau 5-6 cm tebal, lebar mengikuti tebal dinding; pasang waterpass saat dinding naik dan siapkan angkur setiap 60 cm.",
+      "Pintu kamar 80-90 x 200-210 cm; pintu KM 70-80 cm; jendela berkaca 5 mm dengan palang pembagi.",
+      "Kusen aluminium profil: hemat, tidak lapuk, cocok untuk jendela & area basah; kusen kayu lebih hangat untuk pintu utama.",
+      "Ambang bawah jendela (sill) miring 5-10 derajat ke luar agar air hujan tidak meresap ke dinding.",
+      "Daun pintu panel 2 susun dipasang dengan engsel 3 buah + handle; sisi KM sebaiknya daun PVC/aluminium tahan air.",
+    ],
+  },
+  {
+    id: "lubangangin",
+    judul: "Lubang angin permanen (roster)",
+    ringkas: "Roster beton/kisi permanen di dinding & dinding pelana: penghawaan pasif 24 jam tanpa listrik.",
+    poin: [
+      "Letak efektif dekat puncak dinding (sekitar 60 cm di bawah ring balk) karena udara panas naik dan keluar lewat lubang atas.",
+      "Dinding pelana (segitiga atap) wajib diberi ventilasi rongga atap — roster atau kisi kayu — untuk membuang udara panas di bawah atap dan menjaga genteng tidak rembes.",
+      "Roster beton 20x20 cm sekitar Rp10-50 ribu/buah tergantung motif; lubang lebar 40-60 cm memakai 2-3 roster berjejer.",
+      "Berikan roster di KM/WC dan dapur agar uap & bau mengalir keluar tanpa membuka jendela; tambahkan kasa nyamuk bila perlu.",
+      "Jumlah lubang angin permanen pada model ini dihitung otomatis dari denah dan masuk RAB (divisi pekerjaan dinding).",
+    ],
+  },
+  {
+    id: "plestercat",
+    judul: "Plesteran, acian & cat dinding",
+    ringkas: "Plester 1:5 tebal 10-15 mm + acian halus, lalu cat primer + 2 lapis akhir.",
+    poin: [
+      "Plesteran dinding 2 sisi campuran 1:5 (semen : pasir) tebal rata 10-15 mm; bata ringan cukup plester tipis 3-5 mm dengan mortar instan.",
+      "Acian halus (cement finish) membuat muka dinding siap cat dan menutup nat bata dengan rata.",
+      "Sistem cat: 1 lapis primer/sealer (menutup pori & menyamakan dasar) + 2 lapis cat akhir; ruang basah memakai cat khusus tahan jamur.",
+      "Warna terang memantulkan cahaya dan membuat ruang terasa lebih luas; model ini menyediakan pilihan warna cat eksterior.",
+      "Luas plester & cat dihitung dari model 3D (2 sisi dinding termasuk dinding pelana) — cek tahapan 7-8 untuk melihat prosesnya.",
+    ],
+  },
+  {
     id: "sanitasi",
     judul: "Air bersih, limbah & listrik",
     ringkas: "Instalasi tertanam sebelum plester; listrik sesuai PUIL.",
@@ -309,4 +346,82 @@ export const TIPS_PRAKTIS: string[] = [
   "Pekerjaan atap sebaiknya selesai sebelum musim hujan, agar plesteran & lantai tidak terendam.",
   "Air bersih & saluran limbah dipikirkan sejak awal: posisi KM, jalur pipa, dan septic menentukan denah & kedalaman galian.",
   "Cek ulang semua ukuran di lapangan dengan denah aplikasi ini (bouwplank) sebelum galian; kesalahan 10 cm di pondasi sulit diperbaiki.",
+  "Pilih pondasi sesuai tanah: batu kali untuk tanah keras (paling ekonomis), cakar ayam bila tanah lunak/berair atau lahan sempit galian.",
+  "Gunakan fitur Tahapan Pembangunan di panel 3D untuk memahami urutan kerja sebelum bicara dengan tukang/kontraktor.",
+];
+
+export interface ConstructionStage {
+  no: number;
+  nama: string;
+  durasi: string;
+  deskripsi: string; // apa yang tampak pada model 3D saat tahap ini dipilih
+  cek: string[]; // cek mutu lapangan
+}
+
+/** Tahapan simulasi konstruksi pada model 3D (dipakai panel Tahapan Pembangunan). */
+export const CONSTRUCTION_STAGES: ConstructionStage[] = [
+  {
+    no: 1,
+    nama: "Pondasi",
+    durasi: TAHAPAN_PEKERJAAN[1].durasi,
+    deskripsi:
+      "Kondisi awal: galian & pondasi terlihat di bawah permukaan tanah (batu kali strip, atau pelat + buis cakar ayam). Dinding, lantai & atap belum dibangun — perhatikan posisi buis/titik kolom.",
+    cek: TAHAPAN_PEKERJAAN[1].cekMutu,
+  },
+  {
+    no: 2,
+    nama: "Sloof & kolom",
+    durasi: TAHAPAN_PEKERJAAN[2].durasi,
+    deskripsi:
+      "Sloof beton 15/20 mengelilingi denah di atas pondasi dan kolom praktis 15/15 berdiri di tiap simpul dinding — tulang bangunan terpasang sebelum pasangan bata dimulai.",
+    cek: TAHAPAN_PEKERJAAN[2].cekMutu,
+  },
+  {
+    no: 3,
+    nama: "Dinding & kusen",
+    durasi: TAHAPAN_PEKERJAAN[3].durasi,
+    deskripsi:
+      "Pasangan bata naik di atas sloof batu demi batu, bersamaan pemasangan kusen pintu/jendela dan lubang angin permanen (roster) di dekat puncak dinding.",
+    cek: TAHAPAN_PEKERJAAN[3].cekMutu,
+  },
+  {
+    no: 4,
+    nama: "Ring balk & pelana",
+    durasi: TAHAPAN_PEKERJAAN[4].durasi,
+    deskripsi:
+      "Ring balk 15/20 dicor di puncak seluruh dinding; di kedua ujung, pasangan naik membentuk segitiga pelana mengikuti kemiringan atap, lengkap dengan roster ventilasi rongga atap.",
+    cek: TAHAPAN_PEKERJAAN[4].cekMutu,
+  },
+  {
+    no: 5,
+    nama: "Rangka atap",
+    durasi: TAHAPAN_PEKERJAAN[5].durasi,
+    deskripsi:
+      "Kuda-kuda baja ringan C75 lengkap dengan web pengaku, reng, dan lisplank dipasang di atas ring balk — sebelum penutup atap, struktur rangka terlihat penuh dari bawah.",
+    cek: TAHAPAN_PEKERJAAN[5].cekMutu,
+  },
+  {
+    no: 6,
+    nama: "Genteng & plafon",
+    durasi: TAHAPAN_PEKERJAAN[5].durasi,
+    deskripsi:
+      "Genteng beton flat dipasang di atas reng lengkap dengan nok di puncak, overstek melindungi dinding, plafon gypsum dipasang di bawah rangka, talang di kedua eaves.",
+    cek: TAHAPAN_PEKERJAAN[5].cekMutu,
+  },
+  {
+    no: 7,
+    nama: "Plesteran & acian",
+    durasi: TAHAPAN_PEKERJAAN[7].durasi,
+    deskripsi:
+      "Seluruh muka dinding (termasuk dinding pelana) ditutup plesteran 1:5 tebal 10-15 mm dan acian halus — susunan bata tidak lagi terlihat dari luar.",
+    cek: TAHAPAN_PEKERJAAN[7].cekMutu,
+  },
+  {
+    no: 8,
+    nama: "Cat & finishing",
+    durasi: TAHAPAN_PEKERJAAN[9].durasi,
+    deskripsi:
+      "Cat dinding (primer + 2 lapis) dengan warna pilihan Anda, lantai keramik selesai, pintu-jendela & roster terpasang penuh — rumah siap dihuni.",
+    cek: TAHAPAN_PEKERJAAN[9].cekMutu,
+  },
 ];

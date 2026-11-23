@@ -1,0 +1,811 @@
+     1→/**
+     2→ * Mesin perhitungan rumah 6x6 m (standar praktik Indonesia):
+     3→ * - definisi denah (dinding luar/dalam + bukaan pintu & jendela)
+     4→ * - generator susunan bata per lajur (batu demi batu, ikatan berselang)
+     5→ * - kalkulasi volume adukan/nat, luas bersih tiap ruangan, dan kuantitas RAB
+     6→ * - kuantitas struktur: galian, pondasi batu kali, sloof 15/20, kolom praktis
+     7→ *   15/15, ring balk 15/20, atap pelana (kuda-kuda, reng, genteng)
+     8→ *
+     9→ * Semua ukuran dalam meter kecuali disebutkan lain (nat dalam mm, atap dalam
+    10→ * derajat). Acuan praktik: SNI 8640:2018 (bata ringan), SNI 03-2965-1992
+    11→ * (pencahayaan alami), AHSP 2022 (analisa harga satuan), PUIL 2011 (listrik).
+    12→ */
+    13→
+    14→export type Axis = "h" | "v"; // h: dinding membentang sepanjang sumbu X denah, v: sepanjang Y
+    15→
+    16→export type OpeningKind = "pintu" | "jendela";
+    17→
+    18→export interface OpeningSpec {
+    19→  from: number; // koordinat absolut sepanjang sumbu dinding (meter)
+    20→  to: number;
+    21→  sill: number; // tinggi ambang bawah (0 untuk pintu)
+    22→  top: number; // tinggi ambang atas
+    23→  kind: OpeningKind;
+    24→  label: string;
+    25→}
+    26→
+    27→export interface WallSpec {
+    28→  id: string;
+    29→  name: string;
+    30→  axis: Axis;
+    31→  edge?: number; // dinding luar: garis tepi luar bidang tanah (0 atau 6)
+    32→  pos?: number; // posisi centerline dinding dalam (atau dinding luar tanpa edge)
+    33→  from: number | ((t: { tL: number; tD: number }) => number); // awal band dinding
+    34→  to: number | ((t: { tL: number; tD: number }) => number); // akhir band dinding
+    35→  outer: boolean;
+    36→  gable?: { apexAt: number; apexAdd: number; halfSpan: number }; // dinding ujung atap pelana (apexAdd dioverride oleh kemiringan atap)
+    37→  openings: OpeningSpec[];
+    38→}
+    39→
+    40→export interface RoomSpec {
+    41→  id: string;
+    42→  name: string;
+    43→  x0: number;
+    44→  y0: number;
+    45→  x1: number;
+    46→  y1: number;
+    47→}
+    48→
+    49→export interface LayoutPreset {
+    50→  id: string;
+    51→  name: string;
+    52→  desc: string;
+    53→  walls: WallSpec[];
+    54→  rooms: RoomSpec[];
+    55→}
+    56→
+    57→// ---------------------------------------------------------------- presets --
+    58→
+    59→const PINTU_W = 0.9;
+    60→const PINTU_H = 2.1;
+    61→const JENDELA_H_ATAS = 2.1;
+    62→const JENDELA_SILL = 0.9;
+    63→
+    64→function pintu(from: number, label: string): OpeningSpec {
+    65→  return { from, to: from + PINTU_W, sill: 0, top: PINTU_H, kind: "pintu", label };
+    66→}
+    67→function jendela(from: number, w: number, label: string, sill = JENDELA_SILL, top = JENDELA_H_ATAS): OpeningSpec {
+    68→  return { from, to: from + w, sill, top, kind: "jendela", label };
+    69→}
+    70→
+    71→// dinding ujung pelana: apex dipusat (3,3); apexAdd dihitung dari kemiringan atap
+    72→const GABLE = { apexAt: 3, apexAdd: 0, halfSpan: 3 };
+    73→
+    74→export const LAYOUT_PRESETS: LayoutPreset[] = [
+    75→  {
+    76→    id: "2br",
+    77→    name: "2 Kamar (Tipe 36)",
+    78→    desc: "Dua kamar tidur 3x3, ruang keluarga + dapur, kamar mandi 1,5x1,5",
+    79→    walls: [
+    80→      {
+    81→        id: "belakang", name: "Dinding belakang (dapur & KM)", axis: "h", edge: 0,
+    82→        from: 0, to: 6, outer: true, gable: GABLE,
+    83→        openings: [
+    84→          jendela(3.3, 0.6, "Jendela KM", 1.4, 2.0),
+    85→          jendela(4.9, 0.9, "Jendela dapur", 1.0, 2.0),
+    86→        ],
+    87→      },
+    88→      {
+    89→        id: "depan", name: "Dinding depan", axis: "h", edge: 6,
+    90→        from: 0, to: 6, outer: true, gable: GABLE,
+    91→        openings: [
+    92→          jendela(1.0, 1.0, "Jendela kamar 1"),
+    93→          pintu(4.2, "Pintu utama"),
+    94→        ],
+    95→      },
+    96→      {
+    97→        id: "kiri", name: "Dinding sisi kiri", axis: "v", edge: 0,
+    98→        from: (t) => t.tL, to: (t) => 6 - t.tL, outer: true,
+    99→        openings: [
+   100→          jendela(1.0, 1.0, "Jendela kamar 2"),
+   101→          jendela(4.0, 1.0, "Jendela kamar 1"),
+   102→        ],
+   103→      },
+   104→      {
+   105→        id: "kanan", name: "Dinding sisi kanan", axis: "v", edge: 6,
+   106→        from: (t) => t.tL, to: (t) => 6 - t.tL, outer: true,
+   107→        openings: [jendela(3.9, 1.2, "Jendela ruang keluarga")],
+   108→      },
+   109→      {
+   110→        id: "w5", name: "Sekat kamar (vertikal)", axis: "v", pos: 3,
+   111→        from: (t) => t.tL, to: (t) => 6 - t.tL, outer: false,
+   112→        openings: [pintu(1.0, "Pintu kamar 2"), pintu(4.3, "Pintu kamar 1")],
+   113→      },
+   114→      {
+   115→        id: "w6", name: "Sekat antar kamar", axis: "h", pos: 3,
+   116→        from: (t) => t.tL, to: (t) => 3 - t.tD / 2, outer: false,
+   117→        openings: [],
+   118→      },
+   119→      {
+   120→        id: "w7", name: "Sekat area basah", axis: "h", pos: 1.5,
+   121→        from: (t) => 3 + t.tD / 2, to: (t) => 6 - t.tL, outer: false,
+   122→        openings: [pintu(3.3, "Pintu kamar mandi")],
+   123→      },
+   124→      {
+   125→        id: "w8", name: "Sekat kamar mandi", axis: "v", pos: 4.5,
+   126→        from: (t) => t.tL, to: (t) => 1.5 - t.tD / 2, outer: false,
+   127→        openings: [],
+   128→      },
+   129→    ],
+   130→    rooms: [
+   131→      { id: "kamar1", name: "Kamar Tidur 1", x0: 0, y0: 3, x1: 3, y1: 6 },
+   132→      { id: "kamar2", name: "Kamar Tidur 2", x0: 0, y0: 0, x1: 3, y1: 3 },
+   133→      { id: "keluarga", name: "Ruang Keluarga & Dapur", x0: 3, y0: 1.5, x1: 6, y1: 6 },
+   134→      { id: "km", name: "Kamar Mandi", x0: 3, y0: 0, x1: 4.5, y1: 1.5 },
+   135→      { id: "dapur", name: "Area Dapur", x0: 4.5, y0: 0, x1: 6, y1: 1.5 },
+   136→    ],
+   137→  },
+   138→  {
+   139→    id: "studio",
+   140→    name: "Studio (1 ruang besar)",
+   141→    desc: "Satu ruang serbaguna + kamar mandi pojok 1,5x2 m",
+   142→    walls: [
+   143→      {
+   144→        id: "belakang", name: "Dinding belakang", axis: "h", edge: 0,
+   145→        from: 0, to: 6, outer: true, gable: GABLE,
+   146→        openings: [
+   147→          jendela(1.0, 1.0, "Jendela dapur"),
+   148→          jendela(5.1, 0.6, "Jendela KM", 1.4, 2.0),
+   149→        ],
+   150→      },
+   151→      {
+   152→        id: "depan", name: "Dinding depan", axis: "h", edge: 6,
+   153→        from: 0, to: 6, outer: true, gable: GABLE,
+   154→        openings: [pintu(2.5, "Pintu utama"), jendela(4.3, 1.3, "Jendela depan")],
+   155→      },
+   156→      {
+   157→        id: "kiri", name: "Dinding sisi kiri", axis: "v", edge: 0,
+   158→        from: (t) => t.tL, to: (t) => 6 - t.tL, outer: true,
+   159→        openings: [jendela(2.6, 1.5, "Jendela studio")],
+   160→      },
+   161→      {
+   162→        id: "kanan", name: "Dinding sisi kanan", axis: "v", edge: 6,
+   163→        from: (t) => t.tL, to: (t) => 6 - t.tL, outer: true,
+   164→        openings: [
+   165→          jendela(0.5, 0.6, "Jendela KM", 1.4, 2.0),
+   166→          jendela(2.9, 1.5, "Jendela studio"),
+   167→        ],
+   168→      },
+   169→      {
+   170→        id: "w8", name: "Sekat kamar mandi", axis: "v", pos: 4.5,
+   171→        from: (t) => t.tL, to: (t) => 2 - t.tD / 2, outer: false,
+   172→        openings: [pintu(0.9, "Pintu kamar mandi")],
+   173→      },
+   174→      {
+   175→        id: "w7", name: "Sekat area basah", axis: "h", pos: 2,
+   176→        from: (t) => 4.5 + t.tD / 2, to: (t) => 6 - t.tL, outer: false,
+   177→        openings: [],
+   178→      },
+   179→    ],
+   180→    rooms: [
+   181→      { id: "studio-a", name: "Ruang Studio (utama)", x0: 0, y0: 0, x1: 4.5, y1: 6 },
+   182→      { id: "studio-b", name: "Ruang Studio (area dapur)", x0: 4.5, y0: 2, x1: 6, y1: 6 },
+   183→      { id: "km", name: "Kamar Mandi", x0: 4.5, y0: 0, x1: 6, y1: 2 },
+   184→    ],
+   185→  },
+   186→];
+   187→
+   188→// ------------------------------------------------------------------ types --
+   189→
+   190→export interface WallRT {
+   191→  spec: WallSpec;
+   192→  id: string;
+   193→  name: string;
+   194→  axis: Axis;
+   195→  c: number; // posisi centerline (y untuk axis h, x untuk axis v)
+   196→  lo: number; // awal band sepanjang axis (batas pasangan bata)
+   197→  hi: number; // akhir band sepanjang axis
+   198→  t: number; // tebal dinding (m)
+   199→  h: number; // tinggi dinding datar (m)
+   200→  gable?: { apexAt: number; apexAdd: number; halfSpan: number; baseZ: number }; // baseZ = puncak ring balk
+   201→  openings: OpeningSpec[];
+   202→  outer: boolean;
+   203→  explodeDir: [number, number];
+   204→}
+   205→
+   206→export interface BrickInstance {
+   207→  wallId: string;
+   208→  outer: boolean;
+   209→  x: number; // pusat bata, koordinat denah
+   210→  y: number; // pusat bata, koordinat denah
+   211→  z: number; // elevasi dasar bata (m, dari lantai)
+   212→  len: number; // panjang terpasang (m, bisa potongan)
+   213→  hgt: number; // tinggi terpasang (m, dipotong mengikuti dinding atap)
+   214→  rotY: number; // 0 = sepanjang X, Math.PI/2 = sepanjang Y
+   215→}
+   216→
+   217→export interface RoomNet {
+   218→  id: string;
+   219→  name: string;
+   220→  w: number; // dimensi bersih (m)
+   221→  d: number;
+   222→  area: number;
+   223→  cx: number; // pusat ruangan (koordinat denah, untuk label 3D)
+   224→  cy: number;
+   225→}
+   226→
+   227→export interface KolomRT {
+   228→  x: number;
+   229→  y: number;
+   230→}
+   231→
+   232→export interface HouseConfig {
+   233→  preset: string;
+   234→  tinggi: number;
+   235→  jenis: "hebel" | "merah";
+   236→  tLuar: number; // mm
+   237→  tDalam: number; // mm
+   238→  natMm: number;
+   239→  wastePct: number;
+   240→  plesteran: boolean;
+   241→  atapDeg: number; // kemiringan atap (derajat dari mendatar)
+   242→  overhang: number; // overstek atap (m)
+   243→}
+   244→
+   245→export const BRICK = {
+   246→  hebel: { L: 0.6, H: 0.2, label: "Bata putih / hebel AAC 60 x 20 cm" },
+   247→  merah: { L: 0.2, H: 0.05, label: "Bata merah 20 x 10 x 5 cm (pasangan 1/2 batu)" },
+   248→} as const;
+   249→
+   250→export const HEBEL_THICK = [75, 100, 125, 150, 200];
+   251→export const MERAH_THICK = [100, 200];
+   252→
+   253→// dimensi struktur standar rumah sederhana 1 lantai (praktik Indonesia)
+   254→export const RB_H = 0.2; // tinggi ring balk / sloof 15/20 (m)
+   255→export const SLOOF_W = 0.15; // lebar sloof & ring balk 15 cm
+   256→export const KOLOM_S = 0.15; // kolom praktis 15/15
+   257→export const PONDASI_W = 0.4; // lebar pondasi batu kali strip (m)
+   258→export const PONDASI_D = 0.6; // kedalaman pondasi (m)
+   259→export const KUDA_SPACING = 1.2; // jarak kuda-kuda baja ringan (m)
+   260→
+   261→export const DEFAULT_CONFIG: HouseConfig = {
+   262→  preset: "2br",
+   263→  tinggi: 3.0,
+   264→  jenis: "hebel",
+   265→  tLuar: 100,
+   266→  tDalam: 75,
+   267→  natMm: 3,
+   268→  wastePct: 5,
+   269→  plesteran: false,
+   270→  atapDeg: 30,
+   271→  overhang: 0.6,
+   272→};
+   273→
+   274→export const DEFAULT_CONFIG_MERAH: HouseConfig = {
+   275→  ...DEFAULT_CONFIG,
+   276→  jenis: "merah",
+   277→  tLuar: 100,
+   278→  tDalam: 100,
+   279→  natMm: 10,
+   280→  plesteran: true,
+   281→};
+   282→
+   283→// ---------------------------------------------------------------- helpers --
+   284→
+   285→function clamp01(v: number): number {
+   286→  return v < 0 ? 0 : v > 1 ? 1 : v;
+   287→}
+   288→
+   289→interface Interval {
+   290→  lo: number;
+   291→  hi: number;
+   292→}
+   293→
+   294→function subtractIntervals(base: Interval, cuts: Interval[]): Interval[] {
+   295→  let pieces: Interval[] = [{ ...base }];
+   296→  for (const c of cuts) {
+   297→    const next: Interval[] = [];
+   298→    for (const p of pieces) {
+   299→      if (c.hi <= p.lo || c.lo >= p.hi) {
+   300→        next.push(p);
+   301→        continue;
+   302→      }
+   303→      if (c.lo > p.lo) next.push({ lo: p.lo, hi: c.lo });
+   304→      if (c.hi < p.hi) next.push({ lo: c.hi, hi: p.hi });
+   305→    }
+   306→    pieces = next;
+   307→  }
+   308→  return pieces.filter((p) => p.hi - p.lo > 0.015); // buang irisan sangat tipis
+   309→}
+   310→
+   311→// ----------------------------------------------------------------- engine --
+   312→
+   313→export interface HouseModel {
+   314→  config: HouseConfig;
+   315→  walls: WallRT[];
+   316→  brickDims: { L: number; H: number };
+   317→  bricks: BrickInstance[];
+   318→  count: {
+   319→    outerPieces: number;
+   320→    innerPieces: number;
+   321→    totalPieces: number;
+   322→    buyOuter: number;
+   323→    buyInner: number;
+   324→    totalBuy: number;
+   325→  };
+   326→  mortar: {
+   327→    volM3: number;
+   328→    semenZak: number;
+   329→    pasirM3: number;
+   330→    perekatKg: number;
+   331→    perekatZak: number;
+   332→    natMm: number;
+   333→  };
+   334→  areas: {
+   335→    gross: number;
+   336→    netFloor: number;
+   337→    rooms: RoomNet[];
+   338→    reduksiM2: number;
+   339→    reduksiPct: number;
+   340→    wallFace: number;
+   341→    plasterArea: number;
+   342→    wallFootprint: number;
+   343→  };
+   344→  openings: { doors: number; windows: number; windowAreaM2: number };
+   345→  vent: { bukaanM2: number; pctLantai: number; okSni: boolean; okIdeal: boolean };
+   346→  roof: {
+   347→    areaM2: number;
+   348→    apexAdd: number;
+   349→    overhang: number;
+   350→    deg: number;
+   351→    pitch: number; // tan(deg)
+   352→    yRidge: number; // ketinggian nok (m)
+   353→    kudaKuda: number;
+   354→    rengPerSlope: number;
+   355→    gentengPcs: number;
+   356→  };
+   357→  wallLenTotal: number;
+   358→  koloms: KolomRT[];
+   359→  structure: {
+   360→    galianM3: number;
+   361→    pondasiM3: number;
+   362→    sloofM3: number;
+   363→    kolomM3: number;
+   364→    ringbalkM3: number;
+   365→    lisplankM: number;
+   366→    talangM: number;
+   367→  };
+   368→}
+   369→
+   370→export function buildModel(config: HouseConfig): HouseModel {
+   371→  const preset = LAYOUT_PRESETS.find((p) => p.id === config.preset) ?? LAYOUT_PRESETS[0];
+   372→  const tL = config.tLuar / 1000;
+   373→  const tD = config.tDalam / 1000;
+   374→  const dims = BRICK[config.jenis];
+   375→  const j = config.natMm / 1000;
+   376→
+   377→  // geometri atap pelana: ridge memanjang arah Y denah (dinding ujung pelana = depan/belakang)
+   378→  const rad = (config.atapDeg * Math.PI) / 180;
+   379→  const apexAdd = 3 * Math.tan(rad); // setengah bentang 3 m -> naik ridge
+   380→  const pitch = Math.tan(rad);
+   381→  const rbTop = config.tinggi + RB_H; // puncak ring balk = dasar dinding pelana
+   382→
+   383→  // ----- dinding runtime
+   384→  const walls: WallRT[] = preset.walls.map((spec) => {
+   385→    const t = spec.outer ? tL : tD;
+   386→    let c: number;
+   387→    if (spec.edge !== undefined) {
+   388→      c = spec.edge === 0 ? t / 2 : 6 - t / 2;
+   389→    } else {
+   390→      c = spec.pos ?? 0;
+   391→    }
+   392→    const lo = typeof spec.from === "function" ? spec.from({ tL, tD }) : spec.from;
+   393→    const hi = typeof spec.to === "function" ? spec.to({ tL, tD }) : spec.to;
+   394→    const explodeDir: [number, number] =
+   395→      spec.axis === "h"
+   396→        ? spec.edge === 6 || (!spec.outer && (spec.pos ?? 0) < 3)
+   397→          ? [0, 1]
+   398→          : [0, -1]
+   399→        : spec.edge === 6 || (!spec.outer && (spec.pos ?? 0) > 3)
+   400→          ? [1, 0]
+   401→          : [-1, 0];
+   402→    return {
+   403→      spec,
+   404→      id: spec.id,
+   405→      name: spec.name,
+   406→      axis: spec.axis,
+   407→      c,
+   408→      lo,
+   409→      hi,
+   410→      t,
+   411→      h: config.tinggi,
+   412→      gable: spec.gable ? { ...spec.gable, apexAdd, baseZ: rbTop } : undefined,
+   413→      openings: spec.openings.filter((o) => o.to > lo && o.from < hi && o.top > 0.2),
+   414→      outer: spec.outer,
+   415→      explodeDir,
+   416→    };
+   417→  });
+   418→
+   419→  // ----- susunan bata per dinding
+   420→  const bricks: BrickInstance[] = [];
+   421→  let outerPieces = 0;
+   422→  let innerPieces = 0;
+   423→  let wallFace = 0;
+   424→  let bandVol = 0;
+   425→  let brickVol = 0;
+   426→  let wallFootprint = 0;
+   427→  let wallLenTotal = 0;
+   428→
+   429→  const cellL = dims.L + j;
+   430→  const cellH = dims.H + j;
+   431→
+   432→  for (const w of walls) {
+   433→    const len = w.hi - w.lo;
+   434→    wallLenTotal += len;
+   435→    wallFootprint += len * w.t;
+   436→
+   437→    const hAt = w.gable
+   438→      ? (x: number) => w.gable!.baseZ + w.gable!.apexAdd * clamp01(1 - Math.abs(x - w.gable!.apexAt) / w.gable!.halfSpan)
+   439→      : () => w.h;
+   440→
+   441→    // luas muka satu sisi (net bukaan; band ring balk tidak dihitung karena beton)
+   442→    const gableArea = w.gable ? w.gable.apexAdd * (w.hi - w.lo) * 0.5 : 0;
+   443→    const openingArea = w.openings.reduce(
+   444→      (s, o) =>
+   445→        s +
+   446→        Math.max(0, Math.min(o.to, w.hi) - Math.max(o.from, w.lo)) *
+   447→          Math.min(o.top, Math.max(w.h, hAt((o.from + o.to) / 2))),
+   448→      0,
+   449→    );
+   450→    wallFace += w.h * len + gableArea - openingArea;
+   451→    bandVol += (w.h * len + gableArea) * w.t - openingArea * w.t;
+   452→
+   453→    const topZ = w.gable ? w.gable.baseZ + w.gable.apexAdd : w.h;
+   454→    const nCourses = Math.ceil(topZ / cellH);
+   455→    for (let i = 0; i < nCourses; i++) {
+   456→      const zc = i * cellH;
+   457→      if (zc >= topZ - 0.001) break;
+   458→
+   459→      // interval yang boleh dipasangi bata pada lajur ini:
+   460→      // 1) band ring balk (w.h .. baseZ) tidak dipasangi bata; di atas baseZ
+   461→      //    bata mengikuti penyempitan segitiga pelana
+   462→      if (w.gable && zc >= w.h && zc < w.gable.baseZ) continue; // zona ring balk
+   463→
+   464→      const allowed: Interval = { lo: w.lo, hi: w.hi };
+   465→      if (w.gable && zc >= w.gable.baseZ) {
+   466→        const d = w.gable.halfSpan * (1 - (zc - w.gable.baseZ) / w.gable.apexAdd);
+   467→        if (d <= 0) continue;
+   468→        allowed.lo = Math.max(w.lo, w.gable.apexAt - d);
+   469→        allowed.hi = Math.min(w.hi, w.gable.apexAt + d);
+   470→      }
+   471→      if (allowed.hi - allowed.lo <= 0.015) continue;
+   472→
+   473→      // 2) bukaan yang memotong lajur ini secara vertikal
+   474→      const activeCuts: Interval[] = w.openings
+   475→        .filter((o) => o.sill < zc + dims.H - 0.005 && o.top > zc + 0.005)
+   476→        .map((o) => ({ lo: Math.max(o.from, w.lo), hi: Math.min(o.to, w.hi) }));
+   477→
+   478→      // 3) isi bata dengan ikatan berselang (stretcher bond)
+   479→      const phase = (i % 2) * cellL * 0.5;
+   480→      let p = allowed.lo - phase;
+   481→      while (p + dims.L <= allowed.lo) p += cellL;
+   482→      for (; p < allowed.hi; p += cellL) {
+   483→        const segs = subtractIntervals(
+   484→          { lo: Math.max(p, allowed.lo), hi: Math.min(p + dims.L, allowed.hi) },
+   485→          activeCuts,
+   486→        );
+   487→        for (const s of segs) {
+   488→          const cx = (s.lo + s.hi) / 2;
+   489→          // di bawah ring balk dipotong rata di tinggi dinding; di atas mengikuti kemiringan pelana
+   490→          const hgt =
+   491→            zc < w.h
+   492→              ? Math.min(dims.H, Math.max(0, w.h - zc))
+   493→              : Math.min(dims.H, Math.max(0, hAt(cx) - zc));
+   494→          if (hgt <= 0.02) continue;
+   495→          const frac = ((s.hi - s.lo) / dims.L) * (hgt / dims.H);
+   496→          if (w.outer) outerPieces += frac;
+   497→          else innerPieces += frac;
+   498→          brickVol += frac * dims.L * dims.H * w.t;
+   499→          bricks.push(
+   500→            w.axis === "h"
+   501→              ? { wallId: w.id, outer: w.outer, x: cx, y: w.c, z: zc, len: s.hi - s.lo, hgt, rotY: 0 }
+   502→              : { wallId: w.id, outer: w.outer, x: w.c, y: cx, z: zc, len: s.hi - s.lo, hgt, rotY: Math.PI / 2 },
+   503→          );
+   504→        }
+   505→      }
+   506→    }
+   507→  }
+   508→
+   509→  const mortarVol = Math.max(0, bandVol - brickVol);
+   510→
+   511→  // ----- luas bersih ruangan (setelah dikurangi tebal dinding)
+   512→  interface Band {
+   513→    axis: Axis;
+   514→    x0: number;
+   515→    x1: number;
+   516→    y0: number;
+   517→    y1: number;
+   518→  }
+   519→  const bands: Band[] = walls.map((w) =>
+   520→    w.axis === "h"
+   521→      ? { axis: w.axis, x0: w.lo, x1: w.hi, y0: w.c - w.t / 2, y1: w.c + w.t / 2 }
+   522→      : { axis: w.axis, x0: w.c - w.t / 2, x1: w.c + w.t / 2, y0: w.lo, y1: w.hi },
+   523→  );
+   524→  const rooms: RoomNet[] = preset.rooms.map((r) => {
+   525→    let xl = 0, xr = 0, yb = 0, yt = 0;
+   526→    for (const b of bands) {
+   527→      const yOverlap = Math.min(b.y1, r.y1) - Math.max(b.y0, r.y0);
+   528→      const xOverlap = Math.min(b.x1, r.x1) - Math.max(b.x0, r.x0);
+   529→      if (b.axis === "v") {
+   530→        if (b.x0 <= r.x0 + 0.02 && b.x1 > r.x0 && yOverlap > 0.05) xl = Math.max(xl, b.x1 - r.x0);
+   531→        if (b.x1 >= r.x1 - 0.02 && b.x0 < r.x1 && yOverlap > 0.05) xr = Math.max(xr, r.x1 - b.x0);
+   532→      } else {
+   533→        if (b.y0 <= r.y0 + 0.02 && b.y1 > r.y0 && xOverlap > 0.05) yb = Math.max(yb, b.y1 - r.y0);
+   534→        if (b.y1 >= r.y1 - 0.02 && b.y0 < r.y1 && xOverlap > 0.05) yt = Math.max(yt, r.y1 - b.y0);
+   535→      }
+   536→    }
+   537→    const wNet = Math.max(0, r.x1 - r.x0 - xl - xr);
+   538→    const dNet = Math.max(0, r.y1 - r.y0 - yb - yt);
+   539→    return { id: r.id, name: r.name, w: wNet, d: dNet, area: wNet * dNet, cx: (r.x0 + r.x1) / 2, cy: (r.y0 + r.y1) / 2 };
+   540→  });
+   541→
+   542→  const netFloor = rooms.reduce((s, r) => s + r.area, 0);
+   543→  const gross = 36;
+   544→
+   545→  // ----- kolom praktis 15/15: pada tiap pertemuan centerline dinding h x v
+   546→  const seen = new Set<string>();
+   547→  const koloms: KolomRT[] = [];
+   548→  const tol = 0.15;
+   549→  for (const h of walls) {
+   550→    if (h.axis !== "h") continue;
+   551→    for (const v of walls) {
+   552→      if (v.axis !== "v") continue;
+   553→      if (v.c >= h.lo - tol && v.c <= h.hi + tol && h.c >= v.lo - tol && h.c <= v.hi + tol) {
+   554→        const key = `${v.c.toFixed(2)}|${h.c.toFixed(2)}`;
+   555→        if (!seen.has(key)) {
+   556→          seen.add(key);
+   557→          koloms.push({ x: v.c, y: h.c });
+   558→        }
+   559→      }
+   560→    }
+   561→  }
+   562→
+   563→  // ----- material
+   564→  const waste = config.wastePct / 100;
+   565→  const mortarWithWaste = mortarVol * (1 + waste);
+   566→  const semenZak = config.jenis === "merah" ? mortarWithWaste * 6.3 : 0;
+   567→  const pasirM3 = config.jenis === "merah" ? mortarWithWaste * 1.0 : 0;
+   568→  const perekatKg = config.jenis === "hebel" ? wallFace * 4 : 0;
+   569→  const perekatZak = config.jenis === "hebel" ? perekatKg / 40 : 0;
+   570→
+   571→  // ----- atap pelana (kuda-kuda C75 jarak 1,2 m, genteng beton 10 pcs/m2)
+   572→  const ov = config.overhang;
+   573→  const yRidge = rbTop + apexAdd;
+   574→  const slopeHalf = Math.hypot(3 + ov, apexAdd + ov * pitch);
+   575→  const roofArea = 2 * slopeHalf * (6 + 2 * ov);
+   576→  const kudaKuda = Math.max(4, Math.round(6 / KUDA_SPACING));
+   577→  const rengPerSlope = Math.ceil(3 / 0.4) + 1;
+   578→  const gentengPcs = Math.ceil(roofArea * 10);
+   579→
+   580→  const doors = walls.reduce((s, w) => s + w.openings.filter((o) => o.kind === "pintu").length, 0);
+   581→  const windows = walls.reduce((s, w) => s + w.openings.filter((o) => o.kind === "jendela").length, 0);
+   582→  const windowAreaM2 = walls.reduce(
+   583→    (s, w) => s + w.openings.filter((o) => o.kind === "jendela").reduce((a, o) => a + (o.to - o.from) * (o.top - o.sill), 0),
+   584→    0,
+   585→  );
+   586→
+   587→  // ----- kuantitas struktur
+   588→  const galianM3 = wallLenTotal * PONDASI_D * 0.5; // galian lebar 50 cm
+   589→  const pondasiM3 = wallLenTotal * PONDASI_W * PONDASI_D;
+   590→  const sloofM3 = wallLenTotal * SLOOF_W * RB_H;
+   591→  const kolomM3 = koloms.length * KOLOM_S * KOLOM_S * (config.tinggi + RB_H);
+   592→  const ringbalkM3 = wallLenTotal * SLOOF_W * RB_H;
+   593→  const lisplankM = 2 * (6 + 2 * ov);
+   594→  const talangM = 2 * (6 + 2 * ov);
+   595→
+   596→  return {
+   597→    config,
+   598→    walls,
+   599→    brickDims: { L: dims.L, H: dims.H },
+   600→    bricks,
+   601→    count: {
+   602→      outerPieces,
+   603→      innerPieces,
+   604→      totalPieces: outerPieces + innerPieces,
+   605→      buyOuter: Math.ceil(outerPieces * (1 + waste)),
+   606→      buyInner: Math.ceil(innerPieces * (1 + waste)),
+   607→      totalBuy: Math.ceil(outerPieces * (1 + waste)) + Math.ceil(innerPieces * (1 + waste)),
+   608→    },
+   609→    mortar: {
+   610→      volM3: mortarVol,
+   611→      semenZak,
+   612→      pasirM3,
+   613→      perekatKg,
+   614→      perekatZak,
+   615→      natMm: config.natMm,
+   616→    },
+   617→    areas: {
+   618→      gross,
+   619→      netFloor,
+   620→      rooms,
+   621→      reduksiM2: gross - netFloor,
+   622→      reduksiPct: ((gross - netFloor) / gross) * 100,
+   623→      wallFace,
+   624→      plasterArea: wallFace * 2,
+   625→      wallFootprint,
+   626→    },
+   627→    openings: { doors, windows, windowAreaM2 },
+   628→    vent: {
+   629→      bukaanM2: windowAreaM2,
+   630→      pctLantai: (windowAreaM2 / Math.max(0.01, netFloor)) * 100,
+   631→      okSni: windowAreaM2 >= 0.05 * netFloor,
+   632→      okIdeal: windowAreaM2 >= 0.1 * netFloor,
+   633→    },
+   634→    roof: { areaM2: roofArea, apexAdd, overhang: ov, deg: config.atapDeg, pitch, yRidge, kudaKuda, rengPerSlope, gentengPcs },
+   635→    wallLenTotal,
+   636→    koloms,
+   637→    structure: { galianM3, pondasiM3, sloofM3, kolomM3, ringbalkM3, lisplankM, talangM },
+   638→  };
+   639→}
+   640→
+   641→// -------------------------------------------------------------------- RAB --
+   642→
+   643→export interface RabRow {
+   644→  id: string;
+   645→  divisi: string; // id divisi
+   646→  uraian: string;
+   647→  spek: string;
+   648→  qty: number;
+   649→  unit: string;
+   650→  harga: number;
+   651→  subtotal: number;
+   652→  exact: boolean; // true = kuantitas dihitung dari model 3D, false = estimasi
+   653→  priceKey: string; // kunci di PriceBook untuk edit harga satuan
+   654→}
+   655→
+   656→export interface PriceBook {
+   657→  [id: string]: number;
+   658→}
+   659→
+   660→export const DIVISIONS: { id: string; nama: string; kode: string }[] = [
+   661→  { id: "d1", nama: "Pekerjaan Persiapan", kode: "I" },
+   662→  { id: "d2", nama: "Pondasi & Struktur Bawah", kode: "II" },
+   663→  { id: "d3", nama: "Struktur Beton (Sloof, Kolom, Ring Balk)", kode: "III" },
+   664→  { id: "d4", nama: "Pekerjaan Dinding", kode: "IV" },
+   665→  { id: "d5", nama: "Pekerjaan Atap & Plafon", kode: "V" },
+   666→  { id: "d6", nama: "Pekerjaan Lantai", kode: "VI" },
+   667→  { id: "d7", nama: "Pintu & Jendela", kode: "VII" },
+   668→  { id: "d8", nama: "Instalasi Listrik & Air", kode: "VIII" },
+   669→  { id: "d9", nama: "Pekerjaan Finishing", kode: "IX" },
+   670→];
+   671→
+   672→export const DEFAULT_PRICES: PriceBook = {
+   673→  bouwplank: 350000,
+   674→  galian: 110000,
+   675→  pondasi: 950000,
+   676→  sloof: 2000000,
+   677→  kolom: 2100000,
+   678→  ringbalk: 2000000,
+   679→  bataLuarHebel75: 7500,
+   680→  bataLuarHebel100: 9000,
+   681→  bataLuarHebel125: 11000,
+   682→  bataLuarHebel150: 13000,
+   683→  bataLuarHebel200: 17000,
+   684→  bataMerah: 800,
+   685→  perekat: 72000,
+   686→  semen: 68000,
+   687→  pasir: 350000,
+   688→  plesteran: 95000,
+   689→  rangkaAtap: 135000,
+   690→  genteng: 60000,
+   691→  lisplank: 45000,
+   692→  talang: 60000,
+   693→  plafon: 145000,
+   694→  rabat: 220000,
+   695→  keramik: 95000,
+   696→  pintu: 1200000,
+   697→  jendela: 850000,
+   698→  listrikAir: 6000000,
+   699→  cat: 55000,
+   700→  pembersihan: 1000000,
+   701→};
+   702→
+   703→export function hebelPriceId(mm: number): string {
+   704→  return `bataLuarHebel${mm}`;
+   705→}
+   706→
+   707→export interface RabDivision {
+   708→  id: string;
+   709→  kode: string;
+   710→  nama: string;
+   711→  rows: RabRow[];
+   712→  subtotal: number;
+   713→}
+   714→
+   715→export interface RabSummary {
+   716→  rows: RabRow[];
+   717→  divisions: RabDivision[];
+   718→  materialTotal: number;
+   719→  upahPct: number;
+   720→  upah: number;
+   721→  total: number;
+   722→  perM2Gross: number;
+   723→  perM2Net: number;
+   724→}
+   725→
+   726→export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number): RabSummary {
+   727→  const cfg = model.config;
+   728→  const rows: RabRow[] = [];
+   729→  const push = (id: string, divisi: string, uraian: string, spek: string, qty: number, unit: string, exact: boolean, priceKey?: string) => {
+   730→    const key = priceKey ?? id;
+   731→    const harga = prices[key] ?? 0;
+   732→    rows.push({ id, divisi, uraian, spek, qty, unit, harga, subtotal: qty * harga, exact, priceKey: key });
+   733→  };
+   734→
+   735→  push("bouwplank", "d1", "Pengukuran & bouwplank", "Profil kayu + patok as bangunan", 1, "lot", false);
+   736→
+   737→  push("galian", "d2", "Galian tanah pondasi + urugan kembali", "Galian lebar 50 cm sedalam 60 cm sepanjang dinding", Math.ceil(model.structure.galianM3 * 10) / 10, "m3", true);
+   738→  push("pondasi", "d2", "Pondasi batu kali + campuran 1:5", "Strip 40 x 60 cm (kedalaman 60 cm)", Math.ceil(model.structure.pondasiM3 * 10) / 10, "m3", true);
+   739→
+   740→  push("sloof", "d3", "Sloof beton bertulang 15/20", "Beton K225, tulangan 6D10, begel Ø8-150", Math.ceil(model.structure.sloofM3 * 100) / 100, "m3", true);
+   741→  push("kolom", "d3", "Kolom praktis beton 15/15", "4D10, begel Ø6-200, jarak maks 3 m", Math.ceil(model.structure.kolomM3 * 100) / 100, "m3", true);
+   742→  push("ringbalk", "d3", "Ring balk beton bertulang 15/20", "Mengikat seluruh dinding di ketinggian 3 m", Math.ceil(model.structure.ringbalkM3 * 100) / 100, "m3", true);
+   743→
+   744→  if (cfg.jenis === "hebel") {
+   745→    push("bataLuar", "d4", `Bata putih (hebel) dinding luar ${cfg.tLuar} mm`, "60 x 20 cm SNI 8640, dihitung dari susunan 3D + waste", model.count.buyOuter, "buah", true, hebelPriceId(cfg.tLuar));
+   746→    push("bataDalam", "d4", `Bata putih (hebel) dinding dalam ${cfg.tDalam} mm`, "60 x 20 cm SNI 8640, dihitung dari susunan 3D + waste", model.count.buyInner, "buah", true, hebelPriceId(cfg.tDalam));
+   747→    push("perekat", "d4", "Perekat hebel (mortar instan)", "4 kg per m2 dinding, nat 2-3 mm, kemasan 40 kg/zak", Math.ceil(model.mortar.perekatZak), "zak", true);
+   748→  } else {
+   749→    push("bataLuar", "d4", "Bata merah dinding luar (1/2 batu)", "20x10x5 cm, dihitung dari susunan 3D + waste", model.count.buyOuter, "buah", true, "bataMerah");
+   750→    push("bataDalam", "d4", "Bata merah dinding dalam (1/2 batu)", "20x10x5 cm, dihitung dari susunan 3D + waste", model.count.buyInner, "buah", true, "bataMerah");
+   751→    push("semen", "d4", "Semen pasangan (campuran 1:5)", `Nat ${cfg.natMm} mm; volume adukan ${model.mortar.volM3.toFixed(2)} m3`, Math.ceil(model.mortar.semenZak), "zak", true);
+   752→    push("pasir", "d4", "Pasir pasang", "Campuran adukan 1:5", Math.ceil(model.mortar.pasirM3 * 10) / 10, "m3", true);
+   753→  }
+   754→
+   755→  if (cfg.plesteran) {
+   756→    push("plesteran", "d4", "Plesteran + aci (2 sisi dinding)", "Campuran 1:5 tebal 10-15 mm", Math.ceil(model.areas.plasterArea * 10) / 10, "m2", true);
+   757→  }
+   758→
+   759→  push("rangkaAtap", "d5", "Rangka atap baja ringan C75 + reng", `${model.roof.kudaKuda} kuda-kuda, jarak ${KUDA_SPACING} m, borongan pasang`, Math.ceil(model.roof.areaM2), "m2", true);
+   760→  push("genteng", "d5", "Genteng beton flat + pasang", `10 pcs/m2 (${model.roof.gentengPcs} pcs), kemiringan ${cfg.atapDeg} derajat`, Math.ceil(model.roof.areaM2), "m2", true);
+   761→  push("lisplank", "d5", "Lisplank", "Papan penutup ujung rangka atap", Math.ceil(model.structure.lisplankM * 10) / 10, "m1", true);
+   762→  push("talang", "d5", "Talang air + pipa turun", "PVC di kedua sisi eaves", Math.ceil(model.structure.talangM * 10) / 10, "m1", true);
+   763→  push("plafon", "d5", "Plafon gypsum + rangka hollow galvalum", "Gypsum 9 mm di atas luas bersih lantai", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
+   764→
+   765→  push("rabat", "d6", "Rabat beton lantai kerja", "Tebal 10 cm di atas luas bersih lantai", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
+   766→  push("keramik", "d6", "Keramik lantai + pemasangan", "40x40 cm golongan menengah", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
+   767→
+   768→  push("pintu", "d7", "Kusen + daun pintu lengkap", "Kayu 6x15 cm + daun panel + kunci", model.openings.doors, "unit", false);
+   769→  push("jendela", "d7", "Kusen + kaca jendela", "Aluminium + kaca 5 mm", model.openings.windows, "unit", false);
+   770→
+   771→  push("listrikAir", "d8", "Instalasi listrik & air bersih/limbah", "Titik lampu + stop kontak, MCB, pipa air & kotoran", 1, "borongan", false);
+   772→
+   773→  push("cat", "d9", "Cat dinding (primer + 2 lapis)", "Di atas luas aci 2 sisi dinding", Math.ceil(model.areas.plasterArea * 10) / 10, "m2", true);
+   774→  push("pembersihan", "d9", "Pembersihan akhir & perapihan", "Serah terima pekerjaan", 1, "lot", false);
+   775→
+   776→  const divisions: RabDivision[] = DIVISIONS.map((d) => {
+   777→    const drows = rows.filter((r) => r.divisi === d.id);
+   778→    return {
+   779→      id: d.id,
+   780→      kode: d.kode,
+   781→      nama: d.nama,
+   782→      rows: drows,
+   783→      subtotal: drows.reduce((s, r) => s + r.subtotal, 0),
+   784→    };
+   785→  }).filter((d) => d.rows.length > 0);
+   786→
+   787→  const materialTotal = rows.reduce((s, r) => s + r.subtotal, 0);
+   788→  const upah = Math.round((materialTotal * upahPct) / 100);
+   789→  const total = materialTotal + upah;
+   790→  return {
+   791→    rows,
+   792→    divisions,
+   793→    materialTotal,
+   794→    upahPct,
+   795→    upah,
+   796→    total,
+   797→    perM2Gross: total / model.areas.gross,
+   798→    perM2Net: total / Math.max(0.01, model.areas.netFloor),
+   799→  };
+   800→}
+   801→
+   802→// --------------------------------------------------------------- format ---
+   803→
+   804→export function fmtRp(v: number): string {
+   805→  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(v);
+   806→}
+   807→
+   808→export function fmtNum(v: number, digits = 0): string {
+   809→  return new Intl.NumberFormat("id-ID", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
+   810→}
+   811→

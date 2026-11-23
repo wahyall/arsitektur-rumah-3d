@@ -1,0 +1,660 @@
+     1→     1→/**
+     2→     2→ * Scene 3D rumah (denah 6x6 m): instancing bata per dinding, mortar/nat, kusen,
+     3→     3→ * pintu, jendela, pondasi batu kali, sloof, kolom praktis, ring balk, atap
+     4→     4→ * pelana lengkap (kuda-kuda baja ringan, reng, genteng, lisplank, nok), label
+     5→     5→ * ruangan, potongan (clipping) dan mode bongkar (explode).
+     6→     6→ * Denah memakai (x, y) meter -> three: X = x, Z = y, Y = ketinggian.
+     7→     7→ * Ridge atap memanjang sepanjang sumbu Z (dinding ujung pelana = depan/belakang).
+     8→     8→ */
+     9→     9→import * as THREE from "three";
+    10→    10→import type { HouseModel, WallRT } from "@/lib/house/engine";
+    11→    11→import { RB_H } from "@/lib/house/engine";
+    12→    12→
+    13→    13→export interface ViewState {
+    14→    14→  showRoof: boolean; // genteng + lisplang + nok
+    15→    15→  showRangka: boolean; // kuda-kuda + reng (rangka baja ringan)
+    16→    16→  showStruktur: boolean; // sloof + kolom praktis + ring balk
+    17→    17→  showLabels: boolean;
+    18→    18→  explode: number; // 0..1
+    19→    19→  cutH: number; // ketinggian potongan (m); >= 1000 = tidak dipotong
+    20→    20→}
+    21→    21→
+    22→    22→type CameraPreset = "3d" | "depan" | "atas";
+    23→    23→
+    24→    24→const GROUND_Y = -0.55;
+    25→    25→
+    26→    26→export class HouseScene {
+    27→    27→  private renderer: THREE.WebGLRenderer;
+    28→    28→  private scene: THREE.Scene;
+    29→    29→  private camera: THREE.PerspectiveCamera;
+    30→    30→  private canvas: HTMLCanvasElement;
+    31→    31→  private houseRoot: THREE.Group = new THREE.Group();
+    32→    32→  private kolomGroup: THREE.Group = new THREE.Group();
+    33→    33→  private roofGroup: THREE.Group = new THREE.Group();
+    34→    34→  private tilesGroup: THREE.Group = new THREE.Group();
+    35→    35→  private trussGroup: THREE.Group = new THREE.Group();
+    36→    36→  private labelGroup: THREE.Group = new THREE.Group();
+    37→    37→  private clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
+    38→    38→  private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
+    39→    39→  private ro: ResizeObserver;
+    40→    40→
+    41→    41→  // orbit state
+    42→    42→  private target = new THREE.Vector3(3, 1.2, 3);
+    43→    43→  private sph = { radius: 13, theta: Math.PI * 0.15, phi: 1.02 };
+    44→    44→  private pointers = new Map<number, { x: number; y: number }>();
+    45→    45→  private panMode = false;
+    46→    46→  private pinchDist = 0;
+    47→    47→  private raf = 0;
+    48→    48→
+    49→    49→  private matBrick = new THREE.MeshStandardMaterial({ color: 0xeceae3, roughness: 0.92, metalness: 0 });
+    50→    50→  private matMortar = new THREE.MeshStandardMaterial({ color: 0x9d9d96, roughness: 0.95 });
+    51→    51→  private matKusen = new THREE.MeshStandardMaterial({ color: 0x83552d, roughness: 0.7 });
+    52→    52→  private matPintu = new THREE.MeshStandardMaterial({ color: 0x6f4423, roughness: 0.65 });
+    53→    53→  private matKaca = new THREE.MeshStandardMaterial({
+    54→    54→    color: 0xd9e4ea,
+    55→    55→    transparent: true,
+    56→    56→    opacity: 0.32,
+    57→    57→    roughness: 0.15,
+    58→    58→    depthWrite: false,
+    59→    59→  });
+    60→    60→  private matPlinth = new THREE.MeshStandardMaterial({ color: 0xb4b1a8, roughness: 0.9 });
+    61→    61→  private matBeton = new THREE.MeshStandardMaterial({ color: 0x8f9089, roughness: 0.82 });
+    62→    62→  private matLantai = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.6 });
+    63→    63→  private matAtap = new THREE.MeshStandardMaterial({ color: 0x555d63, roughness: 0.85 });
+    64→    64→  private matBaja = new THREE.MeshStandardMaterial({ color: 0x9aa8b2, roughness: 0.45, metalness: 0.55 });
+    65→    65→  private matGenteng = new THREE.MeshStandardMaterial({ color: 0x96524a, roughness: 0.75 });
+    66→    66→  private matLisplank = new THREE.MeshStandardMaterial({ color: 0xd8c9a8, roughness: 0.8 });
+    67→    67→  private matPlafon = new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.95 });
+    68→    68→  private matRidge = new THREE.MeshStandardMaterial({ color: 0x7c3f38, roughness: 0.8 });
+    69→    69→
+    70→    70→  constructor(canvas: HTMLCanvasElement) {
+    71→    71→    this.canvas = canvas;
+    72→    72→    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    73→    73→    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    74→    74→    this.renderer.shadowMap.enabled = true;
+    75→    75→    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    76→    76→    this.renderer.localClippingEnabled = true;
+    77→    77→    this.renderer.setClearColor(0xe3e8e2);
+    78→    78→
+    79→    79→    this.scene = new THREE.Scene();
+    80→    80→    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
+    81→    81→
+    82→    82→    const mats = [
+    83→    83→      this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
+    84→    84→      this.matPlinth, this.matBeton, this.matLantai, this.matAtap, this.matBaja,
+    85→    85→      this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
+    86→    86→    ];
+    87→    87→    for (const m of mats) m.clippingPlanes = [this.clipPlane];
+    88→    88→
+    89→    89→    // pencahayaan
+    90→    90→    const hemi = new THREE.HemisphereLight(0xf6f7f4, 0x8f9483, 0.85);
+    91→    91→    this.scene.add(hemi);
+    92→    92→    const dir = new THREE.DirectionalLight(0xfff4e0, 1.35);
+    93→    93→    dir.position.set(10, 15, 9);
+    94→    94→    dir.castShadow = true;
+    95→    95→    dir.shadow.mapSize.set(2048, 2048);
+    96→    96→    const sc = dir.shadow.camera as THREE.OrthographicCamera;
+    97→    97→    sc.left = -10;
+    98→    98→    sc.right = 14;
+    99→    99→    sc.top = 14;
+   100→   100→    sc.bottom = -8;
+   101→   101→    sc.near = 1;
+   102→   102→    sc.far = 50;
+   103→   103→    dir.shadow.bias = -0.0004;
+   104→   104→    this.scene.add(dir);
+   105→   105→
+   106→   106→    // tanah + petak 6x6
+   107→   107→    const groundGeo = new THREE.PlaneGeometry(60, 60);
+   108→   108→    const groundMat = new THREE.MeshStandardMaterial({ color: 0xb9c3ab, roughness: 1 });
+   109→   109→    this.disposables.push(groundGeo, groundMat);
+   110→   110→    const ground = new THREE.Mesh(groundGeo, groundMat);
+   111→   111→    ground.rotation.x = -Math.PI / 2;
+   112→   112→    ground.position.y = GROUND_Y;
+   113→   113→    ground.receiveShadow = true;
+   114→   114→    this.scene.add(ground);
+   115→   115→
+   116→   116→    const grid = new THREE.GridHelper(60, 60, 0xc3c9bd, 0xd0d5ca);
+   117→   117→    (grid.material as THREE.Material).transparent = true;
+   118→   118→    (grid.material as THREE.Material).opacity = 0.55;
+   119→   119→    grid.position.y = GROUND_Y + 0.002;
+   120→   120→    this.scene.add(grid);
+   121→   121→
+   122→   122→    const plotGeo = new THREE.PlaneGeometry(6, 6);
+   123→   123→    const plotMat = new THREE.MeshStandardMaterial({ color: 0x9db084, roughness: 1 });
+   124→   124→    this.disposables.push(plotGeo, plotMat);
+   125→   125→    const plot = new THREE.Mesh(plotGeo, plotMat);
+   126→   126→    plot.rotation.x = -Math.PI / 2;
+   127→   127→    plot.position.set(3, GROUND_Y + 0.005, 3);
+   128→   128→    plot.receiveShadow = true;
+   129→   129→    this.scene.add(plot);
+   130→   130→
+   131→   131→    const outlineGeo = new THREE.BufferGeometry().setFromPoints([
+   132→   132→      new THREE.Vector3(0, GROUND_Y + 0.01, 0),
+   133→   133→      new THREE.Vector3(6, GROUND_Y + 0.01, 0),
+   134→   134→      new THREE.Vector3(6, GROUND_Y + 0.01, 6),
+   135→   135→      new THREE.Vector3(0, GROUND_Y + 0.01, 6),
+   136→   136→      new THREE.Vector3(0, GROUND_Y + 0.01, 0),
+   137→   137→    ]);
+   138→   138→    const outlineMat = new THREE.LineBasicMaterial({ color: 0x3f4a3a });
+   139→   139→    this.disposables.push(outlineGeo, outlineMat);
+   140→   140→    this.scene.add(new THREE.Line(outlineGeo, outlineMat));
+   141→   141→
+   142→   142→    this.scene.add(this.houseRoot);
+   143→   143→    this.houseRoot.add(this.kolomGroup);
+   144→   144→    this.scene.add(this.roofGroup);
+   145→   145→    this.roofGroup.add(this.tilesGroup);
+   146→   146→    this.roofGroup.add(this.trussGroup);
+   147→   147→    this.scene.add(this.labelGroup);
+   148→   148→
+   149→   149→    this.initOrbit();
+   150→   150→    this.ro = new ResizeObserver(() => this.resize());
+   151→   151→    this.ro.observe(canvas.parentElement ?? canvas);
+   152→   152→    this.resize();
+   153→   153→    this.loop();
+   154→   154→  }
+   155→   155→
+   156→   156→  // ------------------------------------------------------------- controls --
+   157→   157→
+   158→   158→  private initOrbit() {
+   159→   159→    this.canvas.style.touchAction = "none";
+   160→   160→    this.canvas.addEventListener("pointerdown", this.onDown);
+   161→   161→    this.canvas.addEventListener("pointermove", this.onMove);
+   162→   162→    this.canvas.addEventListener("pointerup", this.onUp);
+   163→   163→    this.canvas.addEventListener("pointercancel", this.onUp);
+   164→   164→    this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+   165→   165→    this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+   166→   166→  }
+   167→   167→
+   168→   168→  private onDown = (e: PointerEvent) => {
+   169→   169→    this.canvas.setPointerCapture(e.pointerId);
+   170→   170→    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+   171→   171→    this.panMode = e.button === 1 || e.button === 2 || e.shiftKey;
+   172→   172→    if (this.pointers.size === 2) {
+   173→   173→      const pts = [...this.pointers.values()];
+   174→   174→      this.pinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+   175→   175→    }
+   176→   176→  };
+   177→   177→
+   178→   178→  private onMove = (e: PointerEvent) => {
+   179→   179→    const prev = this.pointers.get(e.pointerId);
+   180→   180→    if (!prev) return;
+   181→   181→    const dx = e.clientX - prev.x;
+   182→   182→    const dy = e.clientY - prev.y;
+   183→   183→    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+   184→   184→
+   185→   185→    if (this.pointers.size === 2) {
+   186→   186→      const pts = [...this.pointers.values()];
+   187→   187→      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+   188→   188→      if (this.pinchDist > 0) this.sph.radius = THREE.MathUtils.clamp(this.sph.radius * (this.pinchDist / d), 3, 45);
+   189→   189→      this.pinchDist = d;
+   190→   190→      return;
+   191→   191→    }
+   192→   192→    if (this.panMode) this.pan(dx, dy);
+   193→   193→    else {
+   194→   194→      this.sph.theta -= dx * 0.0055;
+   195→   195→      this.sph.phi = THREE.MathUtils.clamp(this.sph.phi - dy * 0.0045, 0.06, Math.PI * 0.495);
+   196→   196→    }
+   197→   197→  };
+   198→   198→
+   199→   199→  private onUp = (e: PointerEvent) => {
+   200→   200→    this.pointers.delete(e.pointerId);
+   201→   201→    if (this.pointers.size < 2) this.pinchDist = 0;
+   202→   202→  };
+   203→   203→
+   204→   204→  private onWheel = (e: WheelEvent) => {
+   205→   205→    e.preventDefault();
+   206→   206→    this.sph.radius = THREE.MathUtils.clamp(this.sph.radius * (1 + e.deltaY * 0.0011), 3, 45);
+   207→   207→  };
+   208→   208→
+   209→   209→  private pan(dx: number, dy: number) {
+   210→   210→    const fwd = new THREE.Vector3().subVectors(this.target, this.camPos()).setY(0).normalize();
+   211→   211→    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
+   212→   212→    const k = this.sph.radius * 0.0012;
+   213→   213→    this.target.addScaledVector(right, -dx * k);
+   214→   214→    this.target.addScaledVector(fwd, -dy * k);
+   215→   215→    this.target.x = THREE.MathUtils.clamp(this.target.x, -6, 12);
+   216→   216→    this.target.z = THREE.MathUtils.clamp(this.target.z, -6, 12);
+   217→   217→    this.target.y = 1.2;
+   218→   218→  }
+   219→   219→
+   220→   220→  setCameraPreset(p: CameraPreset) {
+   221→   221→    if (p === "depan") {
+   222→   222→      this.target.set(3, 2.0, 3);
+   223→   223→      this.sph = { radius: 12.5, theta: 0, phi: 1.3 };
+   224→   224→    } else if (p === "atas") {
+   225→   225→      this.target.set(3, 0, 3);
+   226→   226→      this.sph = { radius: 13.5, theta: Math.PI * 0.001, phi: 0.03 };
+   227→   227→    } else {
+   228→   228→      this.target.set(3, 1.4, 3);
+   229→   229→      this.sph = { radius: 13, theta: Math.PI * 0.15, phi: 1.02 };
+   230→   230→    }
+   231→   231→  }
+   232→   232→
+   233→   233→  private camPos(): THREE.Vector3 {
+   234→   234→    const { radius, theta, phi } = this.sph;
+   235→   235→    return new THREE.Vector3(
+   236→   236→      this.target.x + radius * Math.sin(phi) * Math.sin(theta),
+   237→   237→      this.target.y + radius * Math.cos(phi),
+   238→   238→      this.target.z + radius * Math.sin(phi) * Math.cos(theta),
+   239→   239→    );
+   240→   240→  }
+   241→   241→
+   242→   242→  private loop = () => {
+   243→   243→    this.raf = requestAnimationFrame(this.loop);
+   244→   244→    this.camera.position.copy(this.camPos());
+   245→   245→    this.camera.lookAt(this.target);
+   246→   246→    this.renderer.render(this.scene, this.camera);
+   247→   247→  };
+   248→   248→
+   249→   249→  private resize() {
+   250→   250→    const el = this.canvas.parentElement ?? this.canvas;
+   251→   251→    const w = Math.max(1, el.clientWidth);
+   252→   252→    const h = Math.max(1, el.clientHeight);
+   253→   253→    this.renderer.setSize(w, h, false);
+   254→   254→    this.camera.aspect = w / h;
+   255→   255→    this.camera.updateProjectionMatrix();
+   256→   256→  }
+   257→   257→
+   258→   258→  // --------------------------------------------------------------- update --
+   259→   259→
+   260→   260→  update(model: HouseModel, view: ViewState) {
+   261→   261→    // bersihkan rumah lama (grup persisten dilepas, lalu dipasang kembali)
+   262→   262→    this.clearGroup(this.houseRoot);
+   263→   263→    this.houseRoot.add(this.kolomGroup);
+   264→   264→    this.clearGroup(this.kolomGroup);
+   265→   265→    this.clearGroup(this.roofGroup);
+   266→   266→    this.roofGroup.add(this.tilesGroup);
+   267→   267→    this.roofGroup.add(this.trussGroup);
+   268→   268→    this.clearGroup(this.tilesGroup);
+   269→   269→    this.clearGroup(this.trussGroup);
+   270→   270→    this.clearGroup(this.labelGroup);
+   271→   271→
+   272→   272→    // potongan
+   273→   273→    this.clipPlane.constant = view.cutH;
+   274→   274→
+   275→   275→    const isHebel = model.config.jenis === "hebel";
+   276→   276→    this.matBrick.color.set(isHebel ? 0xeceae3 : 0xa3492f);
+   277→   277→
+   278→   278→    const tL = model.config.tLuar / 1000;
+   279→   279→    const tinggi = model.config.tinggi;
+   280→   280→
+   281→   281→    // lantai interior (rabat + keramik) di Y=0
+   282→   282→    const lantaiW = 6 - 2 * tL;
+   283→   283→    this.addBox(this.houseRoot, 3, -0.05, 3, lantaiW, 0.1, lantaiW, this.matLantai, true);
+   284→   284→
+   285→   285→    // dinding: pondasi batu kali + sloof + bata (instancing per dinding) + ring balk + kusen
+   286→   286→    for (const w of model.walls) {
+   287→   287→      this.buildWall(w, model, view.showStruktur);
+   288→   288→    }
+   289→   289→
+   290→   290→    // kolom praktis 15/15 di tiap simpul dinding
+   291→   291→    if (view.showStruktur) {
+   292→   292→      const kw = Math.max(0.15, tL + 0.015);
+   293→   293→      for (const k of model.koloms) {
+   294→   294→        this.addBox(this.kolomGroup, k.x, (tinggi + RB_H) / 2, k.y, kw, tinggi + RB_H, kw, this.matBeton);
+   295→   295→      }
+   296→   296→    }
+   297→   297→
+   298→   298→    // atap + plafon
+   299→   299→    this.buildRoof(model, view);
+   300→   300→
+   301→   301→    // label ruangan
+   302→   302→    if (view.showLabels) {
+   303→   303→      for (const room of model.areas.rooms) {
+   304→   304→        if (room.area <= 0.5) continue;
+   305→   305→        const sp = this.makeTextSprite(room.name, `${room.w.toFixed(2)} x ${room.d.toFixed(2)} m | ${room.area.toFixed(1)} m2`);
+   306→   306→        sp.position.set(room.cx, 1.55, room.cy);
+   307→   307→        this.labelGroup.add(sp);
+   308→   308→      }
+   309→   309→    }
+   310→   310→    this.labelGroup.visible = view.showLabels;
+   311→   311→
+   312→   312→    // mode bongkar: atap naik, dinding mengurai keluar
+   313→   313→    this.roofGroup.position.y = view.explode * 2.6;
+   314→   314→    for (const g of this.houseRoot.children) {
+   315→   315→      if (g instanceof THREE.Group && g.userData.explodeDir) {
+   316→   316→        const d = g.userData.explodeDir as [number, number];
+   317→   317→        g.position.set(d[0] * view.explode * 1.4, 0, d[1] * view.explode * 1.4);
+   318→   318→      }
+   319→   319→    }
+   320→   320→    this.roofGroup.visible = view.showRoof || view.showRangka;
+   321→   321→    this.tilesGroup.visible = view.showRoof;
+   322→   322→    this.trussGroup.visible = view.showRangka;
+   323→   323→    this.kolomGroup.visible = view.showStruktur;
+   324→   324→  }
+   325→   325→
+   326→   326→  private buildWall(w: WallRT, model: HouseModel, showStruktur: boolean) {
+   327→   327→    const group = new THREE.Group();
+   328→   328→    group.userData.explodeDir = w.explodeDir;
+   329→   329→    this.houseRoot.add(group);
+   330→   330→
+   331→   331→    const len = w.hi - w.lo;
+   332→   332→    const t = w.t;
+   333→   333→    const mid = (w.lo + w.hi) / 2;
+   334→   334→    const bw = Math.max(0.15, t + 0.01); // lebar sloof / ring balk (15 cm standar)
+   335→   335→
+   336→   336→    // pondasi batu kali: 40 x 60 cm, dari -0,6 s/d -0,2 m
+   337→   337→    const pt = t + 0.15;
+   338→   338→    // sloof beton 15/20: dari -0,2 s/d 0 m
+   339→   339→    // ring balk 15/20: dari tinggi s/d tinggi + 0,2 m (dasar dinding pelana)
+   340→   340→    if (w.axis === "h") {
+   341→   341→      this.addBox(group, mid, -0.4, w.c, len, 0.4, pt, this.matPlinth);
+   342→   342→      if (showStruktur) {
+   343→   343→        this.addBox(group, mid, -0.1, w.c, len, RB_H, bw, this.matBeton);
+   344→   344→        this.addBox(group, mid, w.h + RB_H / 2, w.c, len, RB_H, bw, this.matBeton);
+   345→   345→      }
+   346→   346→    } else {
+   347→   347→      this.addBox(group, w.c, -0.4, mid, pt, 0.4, len, this.matPlinth);
+   348→   348→      if (showStruktur) {
+   349→   349→        this.addBox(group, w.c, -0.1, mid, bw, RB_H, len, this.matBeton);
+   350→   350→        this.addBox(group, w.c, w.h + RB_H / 2, mid, bw, RB_H, len, this.matBeton);
+   351→   351→      }
+   352→   352→    }
+   353→   353→
+   354→   354→    // mortar/nat slab: kotak-kotak menghindari bukaan (hanya sampai tinggi dinding datar)
+   355→   355→    const segs: { lo: number; hi: number; z0: number; z1: number }[] = [];
+   356→   356→    const ops = [...w.openings].sort((a, b) => a.from - b.from);
+   357→   357→    let cursor = w.lo;
+   358→   358→    for (const o of ops) {
+   359→   359→      const clo = Math.max(o.from, w.lo);
+   360→   360→      const chi = Math.min(o.to, w.hi);
+   361→   361→      if (clo > cursor) segs.push({ lo: cursor, hi: clo, z0: 0, z1: w.h });
+   362→   362→      if (o.sill > 0) segs.push({ lo: clo, hi: chi, z0: 0, z1: o.sill });
+   363→   363→      if (o.top < w.h) segs.push({ lo: clo, hi: chi, z0: o.top, z1: w.h });
+   364→   364→      cursor = Math.max(cursor, chi);
+   365→   365→    }
+   366→   366→    if (cursor < w.hi) segs.push({ lo: cursor, hi: w.hi, z0: 0, z1: w.h });
+   367→   367→    for (const s of segs) {
+   368→   368→      if (s.hi - s.lo < 0.01 || s.z1 - s.z0 < 0.01) continue;
+   369→   369→      if (w.axis === "h") this.addBox(group, (s.lo + s.hi) / 2, (s.z0 + s.z1) / 2, w.c, s.hi - s.lo, s.z1 - s.z0, t, this.matMortar);
+   370→   370→      else this.addBox(group, w.c, (s.z0 + s.z1) / 2, (s.lo + s.hi) / 2, t, s.z1 - s.z0, s.hi - s.lo, this.matMortar);
+   371→   371→    }
+   372→   372→
+   373→   373→    // segitiga mortar di ujung atap pelana (dinding depan/belakang), di atas ring balk
+   374→   374→    if (w.gable) {
+   375→   375→      const baseZ = w.gable.baseZ;
+   376→   376→      const shape = new THREE.Shape();
+   377→   377→      shape.moveTo(w.lo, baseZ);
+   378→   378→      shape.lineTo(w.hi, baseZ);
+   379→   379→      shape.lineTo(w.gable.apexAt, baseZ + w.gable.apexAdd);
+   380→   380→      shape.closePath();
+   381→   381→      const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
+   382→   382→      const mesh = new THREE.Mesh(geo, this.matMortar);
+   383→   383→      mesh.castShadow = true;
+   384→   384→      mesh.receiveShadow = true;
+   385→   385→      mesh.position.set(0, 0, w.c - t / 2);
+   386→   386→      group.add(mesh);
+   387→   387→      this.disposables.push(geo);
+   388→   388→    }
+   389→   389→
+   390→   390→    // bata instanced
+   391→   391→    const bricks = model.bricks.filter((b) => b.wallId === w.id);
+   392→   392→    if (bricks.length > 0) {
+   393→   393→      const geo = new THREE.BoxGeometry(1, 1, 1);
+   394→   394→      const im = new THREE.InstancedMesh(geo, this.matBrick, bricks.length);
+   395→   395→      im.castShadow = true;
+   396→   396→      im.receiveShadow = true;
+   397→   397→      const m4 = new THREE.Matrix4();
+   398→   398→      const q = new THREE.Quaternion();
+   399→   399→      const col = new THREE.Color();
+   400→   400→      const base = new THREE.Color(model.config.jenis === "hebel" ? 0xeceae3 : 0xa3492f);
+   401→   401→      bricks.forEach((b, i) => {
+   402→   402→        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.rotY);
+   403→   403→        m4.compose(
+   404→   404→          new THREE.Vector3(b.x, b.z + b.hgt / 2, b.y),
+   405→   405→          q,
+   406→   406→          new THREE.Vector3(b.len, b.hgt, t + 0.008),
+   407→   407→        );
+   408→   408→        im.setMatrixAt(i, m4);
+   409→   409→        // variasi warna batu demi batu (deterministik)
+   410→   410→        const r = mulberry32(i * 7919 + w.lo * 100)();
+   411→   411→        col.copy(base).offsetHSL(0, model.config.jenis === "hebel" ? 0 : 0.01 * (r - 0.5), (r - 0.5) * (model.config.jenis === "hebel" ? 0.05 : 0.08));
+   412→   412→        im.setColorAt(i, col);
+   413→   413→      });
+   414→   414→      group.add(im);
+   415→   415→      this.disposables.push(geo);
+   416→   416→    }
+   417→   417→
+   418→   418→    // kusen, pintu & jendela
+   419→   419→    for (const o of w.openings) {
+   420→   420→      const wdt = o.to - o.from;
+   421→   421→      const midO = (o.from + o.to) / 2;
+   422→   422→      const ft = t + 0.02; // tebal kusen menonjol sedikit dari muka dinding
+   423→   423→      if (w.axis === "h") {
+   424→   424→        this.addBox(group, o.from + 0.03, (o.sill + o.top) / 2, w.c, 0.06, o.top - o.sill, ft, this.matKusen);
+   425→   425→        this.addBox(group, o.to - 0.03, (o.sill + o.top) / 2, w.c, 0.06, o.top - o.sill, ft, this.matKusen);
+   426→   426→        this.addBox(group, midO, o.top - 0.045, w.c, wdt, 0.09, ft, this.matKusen);
+   427→   427→        if (o.sill > 0) this.addBox(group, midO, o.sill + 0.045, w.c, wdt, 0.09, ft, this.matKusen);
+   428→   428→        if (o.kind === "pintu") {
+   429→   429→          this.addBox(group, midO, (o.top - 0.02) / 2, w.c, wdt - 0.05, o.top - 0.06, 0.045, this.matPintu);
+   430→   430→        } else {
+   431→   431→          this.addBox(group, midO, (o.sill + o.top) / 2, w.c, wdt - 0.08, o.top - o.sill - 0.1, 0.012, this.matKaca, false);
+   432→   432→          this.addBox(group, midO, (o.sill + o.top) / 2, w.c, wdt - 0.08, 0.05, ft - 0.02, this.matKusen);
+   433→   433→        }
+   434→   434→      } else {
+   435→   435→        this.addBox(group, w.c, (o.sill + o.top) / 2, o.from + 0.03, ft, o.top - o.sill, 0.06, this.matKusen);
+   436→   436→        this.addBox(group, w.c, (o.sill + o.top) / 2, o.to - 0.03, ft, o.top - o.sill, 0.06, this.matKusen);
+   437→   437→        this.addBox(group, w.c, o.top - 0.045, midO, ft, 0.09, wdt, this.matKusen);
+   438→   438→        if (o.sill > 0) this.addBox(group, w.c, o.sill + 0.045, midO, ft, 0.09, wdt, this.matKusen);
+   439→   439→        if (o.kind === "pintu") {
+   440→   440→          this.addBox(group, w.c, (o.top - 0.02) / 2, midO, 0.045, o.top - 0.06, wdt - 0.05, this.matPintu);
+   441→   441→        } else {
+   442→   442→          this.addBox(group, w.c, (o.sill + o.top) / 2, midO, 0.012, o.top - o.sill - 0.1, wdt - 0.08, this.matKaca, false);
+   443→   443→          this.addBox(group, w.c, (o.sill + o.top) / 2, midO, ft - 0.02, 0.05, wdt - 0.08, this.matKusen);
+   444→   444→        }
+   445→   445→      }
+   446→   446→    }
+   447→   447→  }
+   448→   448→
+   449→   449→  /**
+   450→   450→   * Atap pelana dengan ridge memanjang sepanjang Z (di x = 3).
+   451→   451→   * Bidang atap menurun ke dinding kiri (x = 0) dan kanan (x = 6);
+   452→   452→   * dinding ujung pelana adalah dinding depan (z = 6) dan belakang (z = 0).
+   453→   453→   * Kemiringan arah turun = ke bawah ke arah luar; PERBAIKAN versi lama:
+   454→   454→   * kemiringan pernah terbalik (valley), sekarang puncak di ridge.
+   455→   455→   */
+   456→   456→  private buildRoof(model: HouseModel, view: ViewState) {
+   457→   457→    const tL = model.config.tLuar / 1000;
+   458→   458→    const tinggi = model.config.tinggi;
+   459→   459→    const apex = model.roof.apexAdd;
+   460→   460→    const pitch = model.roof.pitch; // tan(kemiringan)
+   461→   461→    const ov = model.roof.overhang;
+   462→   462→    const rBase = tinggi + RB_H; // puncak ring balk = dasar dinding pelana / eaves
+   463→   463→    const yRidge = model.roof.yRidge; // rBase + apex
+   464→   464→    const ang = Math.atan(pitch);
+   465→   465→    const zLen = 6 + 2 * ov;
+   466→   466→
+   467→   467→    // tinggi bidang atap pada jarak horizontal hx dari ridge
+   468→   468→    const planeY = (hx: number) => yRidge - hx * pitch;
+   469→   469→
+   470→   470→    // plafon mengikuti area bersih
+   471→   471→    const cw = 6 - 2 * tL;
+   472→   472→    this.addBox(this.roofGroup, 3, tinggi + 0.02, 3, cw, 0.03, cw, this.matPlafon);
+   473→   473→
+   474→   474→    // ---------- rangka baja ringan (kuda-kuda + reng) ----------
+   475→   475→    // kuda-kuda: rangka C75 pada jarak 1,2 m, tapak di atas ring balk
+   476→   476→    const kuda = model.roof.kudaKuda;
+   477→   477→    for (let i = 0; i < kuda; i++) {
+   478→   478→      const z = 0.3 + i * ((6 - 0.6) / (kuda - 1));
+   479→   479→      // ikatan bawah (bottom chord) sepanjang dinding kiri-kanan
+   480→   480→      this.addBox(this.trussGroup, 3, rBase + 0.05, z, 5.6, 0.075, 0.06, this.matBaja);
+   481→   481→      // dua kasau (top chord) naik ke ridge
+   482→   482→      const dx = 2.75;
+   483→   483→      const dy = apex - 0.12;
+   484→   484→      const L = Math.hypot(dx, dy);
+   485→   485→      const angR = Math.atan2(dy, dx);
+   486→   486→      const cyR = (rBase + 0.09 + yRidge - 0.03) / 2;
+   487→   487→      // kiri: ujung +X (ridge) harus NAIK -> rotasi positif
+   488→   488→      this.addTiltedBox(this.trussGroup, 3 - dx / 2, cyR, z, L, 0.075, 0.06, angR, this.matBaja);
+   489→   489→      // kanan: ujung -X (ridge) naik -> rotasi negatif
+   490→   490→      this.addTiltedBox(this.trussGroup, 3 + dx / 2, cyR, z, L, 0.075, 0.06, -angR, this.matBaja);
+   491→   491→      // tiang tengah (king post)
+   492→   492→      if (apex > 0.5) {
+   493→   493→        this.addBox(this.trussGroup, 3, rBase + 0.09 + (apex - 0.14) / 2, z, 0.05, apex - 0.14, 0.05, this.matBaja);
+   494→   494→      }
+   495→   495→    }
+   496→   496→
+   497→   497→    // reng: melintang sepanjang Z di atas kasau, jarak ~40 cm sepanjang bidang
+   498→   498→    for (const s of [-1, 1]) {
+   499→   499→      for (let hx = 0.35; hx <= 3 + ov - 0.05; hx += 0.4) {
+   500→   500→        this.addTiltedBox(
+   501→   501→          this.trussGroup,
+   502→   502→          3 + s * hx,
+   503→   503→          planeY(hx) + 0.075,
+   504→   504→          3,
+   505→   505→          0.05,
+   506→   506→          0.05,
+   507→   507→          zLen,
+   508→   508→          s > 0 ? -ang : ang,
+   509→   509→          this.matBaja,
+   510→   510→        );
+   511→   511→      }
+   512→   512→    }
+   513→   513→
+   514→   514→    // ---------- genteng + lisplank + nok ----------
+   515→   515→    if (view.showRoof) {
+   516→   516→      // genteng beton flat: baris sepanjang Z, tumpukan tiap ~40 cm sepanjang bidang
+   517→   517→      const dxTile = 0.4 * Math.cos(ang);
+   518→   518→      const tileL = dxTile * 1.04;
+   519→   519→      const nRows = Math.max(2, Math.ceil((3 + ov) / dxTile));
+   520→   520→      const zCount = Math.max(2, Math.ceil(zLen / 0.26));
+   521→   521→      for (const s of [-1, 1]) {
+   522→   522→        const geo = new THREE.BoxGeometry(tileL, 0.02, 0.24);
+   523→   523→        const im = new THREE.InstancedMesh(geo, this.matGenteng, nRows * zCount);
+   524→   524→        im.castShadow = true;
+   525→   525→        im.receiveShadow = true;
+   526→   526→        const m4 = new THREE.Matrix4();
+   527→   527→        const q = new THREE.Quaternion();
+   528→   528→        const axis = new THREE.Vector3(0, 0, 1);
+   529→   529→        const col = new THREE.Color();
+   530→   530→        const base = new THREE.Color(0x96524a);
+   531→   531→        let idx = 0;
+   532→   532→        for (let i = 0; i < nRows; i++) {
+   533→   533→          const hx = (i + 0.5) * dxTile;
+   534→   534→          for (let jj = 0; jj < zCount; jj++) {
+   535→   535→            const z = -ov + (jj + 0.5) * (zLen / zCount);
+   536→   536→            q.setFromAxisAngle(axis, s > 0 ? -ang : ang);
+   537→   537→            m4.compose(
+   538→   538→              new THREE.Vector3(3 + s * hx, planeY(hx) + 0.09, z),
+   539→   539→              q,
+   540→   540→              new THREE.Vector3(1, 1, 1),
+   541→   541→            );
+   542→   542→            im.setMatrixAt(idx, m4);
+   543→   543→            const r = mulberry32(idx * 2654435761 + (s > 0 ? 7 : 13))();
+   544→   544→            col.copy(base).offsetHSL(0.004 * (r - 0.5), 0.06 * (r - 0.5), 0.07 * (r - 0.5));
+   545→   545→            im.setColorAt(idx, col);
+   546→   546→            idx++;
+   547→   547→          }
+   548→   548→        }
+   549→   549→        this.tilesGroup.add(im);
+   550→   550→        this.disposables.push(geo);
+   551→   551→      }
+   552→   552→
+   553→   553→      // lisplank pada kedua ujung eaves (sisi kiri & kanan)
+   554→   554→      for (const s of [-1, 1]) {
+   555→   555→        const x = 3 + s * (3 + ov) - s * 0.02;
+   556→   556→        this.addBox(this.tilesGroup, x, planeY(3 + ov) - 0.1, 3, 0.035, 0.2, zLen, this.matLisplank);
+   557→   557→      }
+   558→   558→
+   559→   559→      // nok (ridge cap) menutup pertemuan dua bidang genteng
+   560→   560→      const g = new THREE.BoxGeometry(0.3, 0.06, zLen + 0.04);
+   561→   561→      const nok = new THREE.Mesh(g, this.matRidge);
+   562→   562→      nok.castShadow = true;
+   563→   563→      nok.position.set(3, yRidge + 0.11, 3);
+   564→   564→      this.tilesGroup.add(nok);
+   565→   565→      this.disposables.push(g);
+   566→   566→    }
+   567→   567→  }
+   568→   568→
+   569→   569→  // --------------------------------------------------------------- util --
+   570→   570→
+   571→   571→  private addBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material, receive = true) {
+   572→   572→    const g = new THREE.BoxGeometry(sx, sy, sz);
+   573→   573→    const m = new THREE.Mesh(g, mat);
+   574→   574→    m.position.set(x, y, z);
+   575→   575→    m.castShadow = true;
+   576→   576→    m.receiveShadow = receive;
+   577→   577→    parent.add(m);
+   578→   578→    this.disposables.push(g);
+   579→   579→    return m;
+   580→   580→  }
+   581→   581→
+   582→   582→  /** Kotak miring di sumbu Z: rotasi positif menaikkan ujung +X, negatif menurunkan. */
+   583→   583→  private addTiltedBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotZ: number, mat: THREE.Material) {
+   584→   584→    const g = new THREE.BoxGeometry(sx, sy, sz);
+   585→   585→    const m = new THREE.Mesh(g, mat);
+   586→   586→    m.position.set(x, y, z);
+   587→   587→    m.rotation.z = rotZ;
+   588→   588→    m.castShadow = true;
+   589→   589→    m.receiveShadow = true;
+   590→   590→    parent.add(m);
+   591→   591→    this.disposables.push(g);
+   592→   592→    return m;
+   593→   593→  }
+   594→   594→
+   595→   595→  private makeTextSprite(line1: string, line2: string): THREE.Sprite {
+   596→   596→    const cv = document.createElement("canvas");
+   597→   597→    cv.width = 512;
+   598→   598→    cv.height = 192;
+   599→   599→    const ctx = cv.getContext("2d");
+   600→   600→    if (ctx) {
+   601→   601→      ctx.fillStyle = "rgba(250, 250, 246, 0.88)";
+   602→   602→      ctx.strokeStyle = "rgba(90, 98, 86, 0.9)";
+   603→   603→      ctx.lineWidth = 4;
+   604→   604→      const r = 24;
+   605→   605→      ctx.beginPath();
+   606→   606→      ctx.roundRect(6, 6, 500, 180, r);
+   607→   607→      ctx.fill();
+   608→   608→      ctx.stroke();
+   609→   609→      ctx.fillStyle = "#2f3530";
+   610→   610→      ctx.textAlign = "center";
+   611→   611→      ctx.font = "bold 46px 'Segoe UI', 'Noto Sans', sans-serif";
+   612→   612→      ctx.fillText(line1, 256, 84);
+   613→   613→      ctx.fillStyle = "#54605a";
+   614→   614→      ctx.font = "38px 'Segoe UI', 'Noto Sans', sans-serif";
+   615→   615→      ctx.fillText(line2, 256, 142);
+   616→   616→    }
+   617→   617→    const tex = new THREE.CanvasTexture(cv);
+   618→   618→    tex.anisotropy = 4;
+   619→   619→    this.disposables.push(tex);
+   620→   620→    const sm = new THREE.SpriteMaterial({ map: tex, depthTest: true, transparent: true });
+   621→   621→    this.disposables.push(sm);
+   622→   622→    const sp = new THREE.Sprite(sm);
+   623→   623→    sp.scale.set(1.9, 0.71, 1);
+   624→   624→    return sp;
+   625→   625→  }
+   626→   626→
+   627→   627→  private clearGroup(g: THREE.Group) {
+   628→   628→    for (const child of [...g.children]) {
+   629→   629→      g.remove(child);
+   630→   630→    }
+   631→   631→  }
+   632→   632→
+   633→   633→  dispose() {
+   634→   634→    cancelAnimationFrame(this.raf);
+   635→   635→    this.ro.disconnect();
+   636→   636→    this.canvas.removeEventListener("pointerdown", this.onDown);
+   637→   637→    this.canvas.removeEventListener("pointermove", this.onMove);
+   638→   638→    this.canvas.removeEventListener("pointerup", this.onUp);
+   639→   639→    this.canvas.removeEventListener("pointercancel", this.onUp);
+   640→   640→    this.canvas.removeEventListener("wheel", this.onWheel);
+   641→   641→    for (const d of this.disposables) d.dispose();
+   642→   642→    for (const m of [
+   643→   643→      this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
+   644→   644→      this.matPlinth, this.matBeton, this.matLantai, this.matAtap, this.matBaja,
+   645→   645→      this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
+   646→   646→    ]) m.dispose();
+   647→   647→    this.renderer.dispose();
+   648→   648→  }
+   649→   649→}
+   650→   650→
+   651→   651→function mulberry32(a: number) {
+   652→   652→  return function () {
+   653→   653→    a |= 0;
+   654→   654→    a = (a + 0x6d2b79f5) | 0;
+   655→   655→    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+   656→   656→    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+   657→   657→    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+   658→   658→  };
+   659→   659→}
+   660→   660→

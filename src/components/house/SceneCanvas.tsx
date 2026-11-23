@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { HouseModel } from "@/lib/house/engine";
 import { HouseScene, type ViewState } from "@/lib/house/scene";
+import { CONSTRUCTION_STAGES } from "@/lib/house/knowledge";
 import { Button } from "@/components/ui/button";
 import { BrickWall, Camera, Home, Mountain } from "lucide-react";
 import { fmtNum } from "@/lib/house/engine";
@@ -32,6 +33,9 @@ export function SceneCanvas({ model, view }: Props) {
   }, [model, view]);
 
   const isHebel = model.config.jenis === "hebel";
+  const stage = Math.max(0, Math.round(view.stage || 0));
+  const stageInfo = stage > 0 ? CONSTRUCTION_STAGES[stage - 1] : null;
+  const finishingOn = stage >= 7 || (stage === 0 && view.showFinishing);
 
   return (
     <div className="relative h-[420px] w-full overflow-hidden rounded-md sm:h-[520px] lg:h-[560px]">
@@ -42,11 +46,19 @@ export function SceneCanvas({ model, view }: Props) {
           <BrickWall className="h-3.5 w-3.5 text-amber-700" aria-hidden />
           Bata terpasang di model: {fmtNum(model.count.totalPieces)} buah
         </div>
+        {stageInfo && (
+          <div className="pointer-events-auto rounded-md bg-amber-700/90 px-2 py-1 text-[11px] font-semibold text-white shadow-sm backdrop-blur">
+            Tahap {stageInfo.no}: {stageInfo.nama} ({stageInfo.durasi})
+          </div>
+        )}
         <div className="pointer-events-auto rounded-md bg-white/85 px-2 py-1 text-[10px] text-stone-500 shadow-sm backdrop-blur">
           Geser = putar | Roda/cubit = zoom | Shift+geser = geser pandangan
         </div>
         <div className="pointer-events-auto rounded-md bg-white/85 px-2 py-1 text-[10px] text-stone-500 shadow-sm backdrop-blur">
           Atap pelana {fmtNum(model.roof.deg, 1)}&deg; &middot; {model.roof.kudaKuda} kuda-kuda &middot; nok di ketinggian {fmtNum(model.roof.yRidge, 2)} m
+        </div>
+        <div className="pointer-events-auto rounded-md bg-white/85 px-2 py-1 text-[10px] text-stone-500 shadow-sm backdrop-blur">
+          Pondasi {model.config.pondasi === "cakarayam" ? "cakar ayam" : "batu kali strip"} &middot; {model.openings.vents} lubang angin permanen
         </div>
       </div>
 
@@ -73,7 +85,7 @@ export function SceneCanvas({ model, view }: Props) {
         </span>
         <span className="mr-1 inline-flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#8f9089]" />
-          Beton (sloof, kolom, ring balk)
+          Beton (sloof, kolom, ring balk{model.config.pondasi === "cakarayam" ? ", cakar ayam" : ""})
         </span>
         <span className="mr-1 inline-flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#9aa8b2]" />
@@ -83,10 +95,28 @@ export function SceneCanvas({ model, view }: Props) {
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#96524a]" />
           Genteng beton
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="mr-1 inline-flex items-center gap-1">
           <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#83552d]" />
           Kusen & pintu
         </span>
+        <span className="mr-1 inline-flex items-center gap-1">
+          <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#c9c3b6]" />
+          Roster lubang angin
+        </span>
+        {finishingOn && (
+          <>
+            <span className="mr-1 inline-flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-[#d8d4c9]" />
+              Plester + acian
+            </span>
+            {(stage >= 8 || (stage === 0 && view.showFinishing)) && (
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: view.paintHex || "#f2ecdf", border: "1px solid #b5b0a6" }} />
+                Cat eksterior
+              </span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
