@@ -31,18 +31,20 @@ export default function Home() {
   const [upahPct, setUpahPct] = useState(25);
   const [view, setView] = useState<StudioView>(DEFAULT_VIEW);
   const [dockOpen, setDockOpen] = useState(true);
+  const [selected, setSelected] = useState<string | null>(null); // bagian yang diklik di 3D / outliner
 
   const model = useMemo(() => buildModel(config), [config]);
   const rab = useMemo(() => buildRab(model, prices, upahPct), [model, prices, upahPct]);
 
   const patchConfig = (patch: Partial<HouseConfig>) => setConfig((c) => ({ ...c, ...patch }));
   const patchView = (patch: Partial<StudioView>) => setView((v) => ({ ...v, ...patch }));
+  const changePrice = (key: string, val: number) => setPrices((p) => ({ ...p, [key]: val }));
 
   const gantiJenis = (jenis: "hebel" | "merah") => {
     if (jenis === "hebel") {
-      setConfig((c) => ({ ...DEFAULT_CONFIG, preset: c.preset, tinggi: c.tinggi, pondasi: c.pondasi, atapDeg: c.atapDeg, overhang: c.overhang }));
+      setConfig((c) => ({ ...DEFAULT_CONFIG, preset: c.preset, tinggi: c.tinggi, pondasi: c.pondasi, atapDeg: c.atapDeg, overhang: c.overhang, keramikCm: c.keramikCm }));
     } else {
-      setConfig((c) => ({ ...DEFAULT_CONFIG_MERAH, preset: c.preset, tinggi: c.tinggi, pondasi: c.pondasi, atapDeg: c.atapDeg, overhang: c.overhang }));
+      setConfig((c) => ({ ...DEFAULT_CONFIG_MERAH, preset: c.preset, tinggi: c.tinggi, pondasi: c.pondasi, atapDeg: c.atapDeg, overhang: c.overhang, keramikCm: c.keramikCm }));
     }
   };
 
@@ -60,11 +62,20 @@ export default function Home() {
         {workspace === "model" && (
           <>
             <div className="flex min-h-0 flex-1">
-              <Viewport model={model} view={sceneView} onView={patchView} onToggleDock={() => setDockOpen((o) => !o)} />
+              <Viewport
+                model={model}
+                view={sceneView}
+                onView={patchView}
+                onToggleDock={() => setDockOpen((o) => !o)}
+                rab={rab}
+                selected={selected}
+                onSelect={setSelected}
+                onPriceChange={changePrice}
+              />
               {dockOpen && (
                 <aside className="hidden min-h-0 w-[300px] shrink-0 flex-col overflow-hidden border-l bg-card/40 md:flex xl:w-[320px]">
                   <div className="flex min-h-0 flex-[5] flex-col overflow-hidden">
-                    <Outliner view={view} onView={patchView} model={model} />
+                    <Outliner view={view} onView={patchView} model={model} selected={selected} onSelect={setSelected} />
                   </div>
                   <div className="flex min-h-0 flex-[7] flex-col overflow-hidden">
                     <PropertiesPanel config={config} onConfig={patchConfig} onGantiJenis={gantiJenis} view={view} onView={patchView} model={model} />
@@ -118,7 +129,7 @@ export default function Home() {
               </div>
               <RabPanel
                 rab={rab}
-                onPriceChange={(key, val) => setPrices((p) => ({ ...p, [key]: val }))}
+                onPriceChange={changePrice}
                 onResetPrices={() => setPrices(DEFAULT_PRICES)}
                 onUpahChange={setUpahPct}
               />

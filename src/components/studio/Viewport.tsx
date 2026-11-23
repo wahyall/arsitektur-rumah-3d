@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { HouseModel } from "@/lib/house/engine";
+import type { HouseModel, RabSummary } from "@/lib/house/engine";
 import { fmtNum } from "@/lib/house/engine";
 import { HouseScene } from "@/lib/house/scene";
 import { CONSTRUCTION_STAGES } from "@/lib/house/knowledge";
+import { getPartInfo, type PartId } from "@/lib/house/parts";
 import type { StudioView } from "@/lib/house/studio";
+import { PartInfoPanel } from "@/components/studio/PartInfoPanel";
 import { cn } from "@/lib/utils";
 import {
   BrickWall,
@@ -13,6 +15,7 @@ import {
   Droplets,
   Grid3x3,
   Home,
+  MousePointerClick,
   Mountain,
   PanelRight,
   Ruler,
@@ -28,14 +31,23 @@ interface Props {
   view: StudioView;
   onView: (patch: Partial<StudioView>) => void;
   onToggleDock: () => void;
+  rab: RabSummary;
+  selected: string | null;
+  onSelect: (part: string | null) => void;
+  onPriceChange: (key: string, val: number) => void;
 }
 
 type Preset = "3d" | "depan" | "belakang" | "samping" | "atas";
 
-export function Viewport({ model, view, onView, onToggleDock }: Props) {
+export function Viewport({ model, view, onView, onToggleDock, rab, selected, onSelect, onPriceChange }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sceneRef = useRef<HouseScene | null>(null);
   const [preset, setPreset] = useState<Preset>("3d");
+  // tooltip hover: bagian di bawah kursor + posisi kursor relatif kanvas
+  const [hover, setHover] = useState<{ part: string; x: number; y: number } | null>(null);
+  // ref prop terbaru agar callback scene tidak basi saat re-render
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
 
   const stage = Math.max(0, Math.round(view.stage));
   const stageInfo = stage > 0 ? CONSTRUCTION_STAGES[stage - 1] : null;
@@ -53,11 +65,33 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
     if (!canvasRef.current) return;
     const sc = new HouseScene(canvasRef.current);
     sceneRef.current = sc;
+    // interaksi klik-per-bagian: klik = pilih (panel detail), hover = tooltip nama
+    sc.setPickHandlers({
+      onPick: (part) => onSelectRef.current(part),
+      onHover: (part, x, y) => setHover(part ? { part, x, y } : null),
+    });
     sc.setCameraPreset("3d");
     return () => {
       sc.dispose();
       sceneRef.current = null;
     };
+  }, []);
+
+  // bagian terpilih (dari klik 3D / Outliner) -> highlight emissive di scene
+  useEffect(() => {
+    sceneRef.current?.setSelection(selected);
+  }, [selected]);
+
+  // Esc menutup panel detail (kecuali sedang mengetik di input harga)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      onSelectRef.current(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   useEffect(() => {
@@ -190,7 +224,32 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
 
       {/* ---------- kanvas 3D ---------- */}
       <div className="relative min-h-0 flex-1">
-        <canvas ref={canvasRef} className="viewport-canvas h-full w-full cursor-grab active:cursor-grabbing" aria-label="Viewport 3D rumah dengan susunan bata, struktur, atap, dan jalur instalasi air & listrik" />
+        <canvas ref={canvasRef} className="viewport-canvas h-full w-full cursor-grab active:cursor-grabbing" aria-label="Viewport 3D rumah dengan susunan bata, struktur, atap, dan jalur instalasi air & listrik. Klik bagian bangunan untuk melihat detail dan harga." />
+
+        {/* panel detail bagian terpilih (klik bagian bangunan / baris outliner) */}
+        {selected && getPartInfo(selected as PartId, model) && (
+          <PartInfoPanel
+            partId={selected as PartId}
+            model={model}
+            rab={rab}
+            view={view}
+            onView={onView}
+            onPriceChange={onPriceChange}
+            onClose={() => onSelect(null)}
+          />
+        )}
+
+        {/* tooltip hover: nama bagian di bawah kursor */}
+        {hover && hover.part !== selected && (
+          <div
+            className="pointer-events-none absolute z-10 flex max-w-[220px] items-center gap-1.5 rounded-sm border border-primary/50 bg-[#1b1d20]/95 px-2 py-1 text-[10px] font-medium text-stone-100 shadow-lg backdrop-blur-sm"
+            style={hover.x > 460 ? { right: 14, top: hover.y - 10 } : { left: hover.x + 14, top: hover.y - 10 }}
+          >
+            <MousePointerClick className="h-3 w-3 shrink-0 text-primary" aria-hidden />
+            <span className="truncate">{getPartInfo(hover.part as PartId, model)?.label ?? hover.part}</span>
+            <span className="text-stone-500">&middot; klik utk detail</span>
+          </div>
+        )}
 
         {/* info kiri-atas */}
         <div className="pointer-events-none absolute left-2 top-2 flex flex-col gap-1">
@@ -222,7 +281,7 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
             </div>
           )}
           <div className="pointer-events-auto hidden rounded-sm border border-white/10 bg-black/35 px-2 py-0.5 text-[10px] text-stone-400 backdrop-blur-sm sm:block">
-            Geser = putar &middot; roda/cubit = zoom &middot; Shift+geser = geser
+            Geser = putar &middot; roda/cubit = zoom &middot; Shift+geser = geser &middot; klik bagian = detail &amp; harga
           </div>
         </div>
 
@@ -267,6 +326,9 @@ export function Viewport({ model, view, onView, onToggleDock }: Props) {
           <LegendItem hex="#96524a" label="Genteng beton" />
           <LegendItem hex="#83552d" label="Kusen & pintu" />
           <LegendItem hex="#c9c3b6" label="Roster lubang angin" />
+          <LegendItem hex="#d8d2c4" label={`Keramik lantai ${model.floor.tileCm}x${model.floor.tileCm}`} />
+          <LegendItem hex="#8e939a" label="Keramik KM anti-slip" />
+          <LegendItem hex="#6f6c66" label="Rabat lantai (nat)" />
           {plesterOn && <LegendItem hex="#9b978d" label="Plester + acian" />}
           {catOn && <LegendItem hex={view.paintHex} label="Cat eksterior" border />}
           {airShown && <LegendItem hex="#4c9ee8" label={"Air bersih PVC 1/2\""} />}

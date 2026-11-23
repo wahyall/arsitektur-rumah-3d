@@ -32,6 +32,7 @@ export interface ViewState {
   cutH: number; // ketinggian potongan (m); >= 1000 = tidak dipotong
   stage: number; // 0 = kendali bebas (flag manual); 1..8 = tahapan konstruksi
   paintHex: string; // warna cat eksterior (hex)
+  hidden?: string[]; // id bagian yang disembunyikan pengguna (parts.ts)
 }
 
 /** Flag visibilitas tiap lapisan bangunan (diturunkan dari stage / flag manual). */
@@ -57,6 +58,19 @@ type CameraPreset = "3d" | "depan" | "belakang" | "samping" | "atas";
 const GROUND_Y = -0.2;
 /** Kedalaman top pondasi di bawah lantai = dudukan sloof 15/20 (dasar galian di -0,8 m). */
 const PONDASI_TOP = -0.2;
+/** Id bagian (parts.ts) untuk tiap jenis titik MEP (klik & visibilitas). */
+const MEP_POINT_PART: Record<string, string> = {
+  lampu: "titikLampu",
+  saklar: "saklar",
+  stopkontak: "stopkontak",
+  panel: "panelMcb",
+  meter_air: "meterAir",
+  kran: "kran",
+  shower: "shower",
+  kloset: "kloset",
+  drain: "drain",
+};
+
 
 export class HouseScene {
   private renderer: THREE.WebGLRenderer;
@@ -69,6 +83,7 @@ export class HouseScene {
   private roofGroup: THREE.Group = new THREE.Group();
   private tilesGroup: THREE.Group = new THREE.Group();
   private trussGroup: THREE.Group = new THREE.Group();
+  private lisplankGroup: THREE.Group = new THREE.Group();
   private labelGroup: THREE.Group = new THREE.Group();
   private clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
@@ -103,6 +118,21 @@ export class HouseScene {
   private pinchDist = 0;
   private raf = 0;
 
+  // --- interaksi pilih-bagian (klik raycast): tag mesh -> id bagian (parts.ts),
+  // tooltip hover, dan highlight seleksi via klon material emissive ---
+  private raycaster = new THREE.Raycaster();
+  private pickables: THREE.Object3D[] = [];
+  private pickHandlers: {
+    onPick?: (part: string | null) => void;
+    onHover?: (part: string | null, x: number, y: number) => void;
+  } = {};
+  private selectedPart: string | null = null;
+  private hiMats = new Map<THREE.Material, THREE.Material>(); // material asli -> klon highlight
+  private hiObjs: { obj: THREE.Mesh; mat: THREE.Material }[] = [];
+  private lastHover: string | null = null;
+  private hoverThrottle = 0;
+  private downPos: { x: number; y: number; t: number; button: number } | null = null;
+
   private matBrick = new THREE.MeshStandardMaterial({ color: 0xeceae3, roughness: 0.92, metalness: 0 });
   private matMortar = new THREE.MeshStandardMaterial({ color: 0x9d9d96, roughness: 0.95 });
   private matKusen = new THREE.MeshStandardMaterial({ color: 0x83552d, roughness: 0.7 });
@@ -117,7 +147,11 @@ export class HouseScene {
   private matPlinth = new THREE.MeshStandardMaterial({ color: 0xb4b1a8, roughness: 0.9 });
   private matBeton = new THREE.MeshStandardMaterial({ color: 0x8f9089, roughness: 0.82 });
   private matBuis = new THREE.MeshStandardMaterial({ color: 0x6f716a, roughness: 0.82 });
-  private matLantai = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.6 });
+  // lantai: rabat beton buram (warna nat gelap) + keramik mengilap (krem) /
+  // anti-slip abu untuk ruang basah
+  private matRabat = new THREE.MeshStandardMaterial({ color: 0x6f6c66, roughness: 0.95 });
+  private matKeramik = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.35, metalness: 0.02 });
+  private matKeramikBasah = new THREE.MeshStandardMaterial({ color: 0x8e939a, roughness: 0.85 });
   private matAtap = new THREE.MeshStandardMaterial({ color: 0x555d63, roughness: 0.85 });
   private matBaja = new THREE.MeshStandardMaterial({ color: 0x9aa8b2, roughness: 0.45, metalness: 0.55 });
   private matGenteng = new THREE.MeshStandardMaterial({ color: 0x96524a, roughness: 0.75 });
@@ -163,7 +197,8 @@ export class HouseScene {
 
     const mats = [
       this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
-      this.matPlinth, this.matBeton, this.matBuis, this.matLantai, this.matAtap, this.matBaja,
+      this.matPlinth, this.matBeton, this.matBuis, this.matRabat, this.matKeramik,
+      this.matKeramikBasah, this.matAtap, this.matBaja,
       this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
       this.matPlester, this.matCatInt, this.matCatExt, this.matVent,
       this.matVentFrame, this.matPintuGelap,
@@ -230,6 +265,7 @@ export class HouseScene {
     this.scene.add(this.roofGroup);
     this.roofGroup.add(this.tilesGroup);
     this.roofGroup.add(this.trussGroup);
+    this.roofGroup.add(this.lisplankGroup);
     this.scene.add(this.labelGroup);
     this.scene.add(this.dimsGroup);
     this.scene.add(this.mepGroup);
@@ -250,6 +286,7 @@ export class HouseScene {
     this.canvas.addEventListener("pointerup", this.onUp);
     this.canvas.addEventListener("pointercancel", this.onUp);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    this.canvas.addEventListener("pointerleave", this.onLeave);
     this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   }
 
@@ -257,6 +294,7 @@ export class HouseScene {
     this.canvas.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     this.panMode = e.button === 1 || e.button === 2 || e.shiftKey;
+    this.downPos = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button };
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       this.pinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -265,7 +303,11 @@ export class HouseScene {
 
   private onMove = (e: PointerEvent) => {
     const prev = this.pointers.get(e.pointerId);
-    if (!prev) return;
+    if (!prev) {
+      // gerakan kursor tanpa tombol tertekan: cek bagian di bawah kursor (tooltip)
+      this.hoverAt(e);
+      return;
+    }
     const dx = e.clientX - prev.x;
     const dy = e.clientY - prev.y;
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -285,8 +327,16 @@ export class HouseScene {
   };
 
   private onUp = (e: PointerEvent) => {
+    const dp = this.downPos;
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinchDist = 0;
+    this.downPos = null;
+    // klik tunggal tanpa seret/pan = pilih bagian bangunan (raycast);
+    // klik pada ruang kosong = batalkan seleksi
+    if (dp && dp.button === 0 && e.button === 0 && !this.panMode) {
+      const dist = Math.hypot(e.clientX - dp.x, e.clientY - dp.y);
+      if (dist < 6 && performance.now() - dp.t < 600) this.pickAt(e.clientX, e.clientY);
+    }
   };
 
   private onWheel = (e: WheelEvent) => {
@@ -341,12 +391,121 @@ export class HouseScene {
   /** Mode shading: solid (standar) atau wireframe arsitektur. */
   setWireframe(on: boolean) {
     for (const m of this.buildingMats) m.wireframe = on;
+    for (const m of this.hiMats.values()) (m as THREE.MeshStandardMaterial).wireframe = on; // klon highlight ikut mode
   }
 
   /** Anotasi dimensi 3D (lebar-kedalaman-tinggi + level lantai/dinding/nok). */
   setDims(on: boolean) {
     this.dimsOn = on;
     this.rebuildDims();
+  }
+
+  // --------------------------------------------- interaksi pilih bagian (pick) --
+
+  /** Daftarkan callback dari React: pilih bagian (klik) & tooltip hover. */
+  setPickHandlers(
+    h: {
+      onPick?: (part: string | null) => void;
+      onHover?: (part: string | null, x: number, y: number) => void;
+    },
+  ) {
+    this.pickHandlers = h;
+  }
+
+  /** Set bagian terpilih (highlight emissive di 3D); null = tanpa seleksi. */
+  setSelection(part: string | null) {
+    if (this.selectedPart === part) return;
+    this.selectedPart = part;
+    this.restoreHighlight();
+    this.applyHighlight();
+  }
+
+  private restoreHighlight() {
+    for (const h of this.hiObjs) h.obj.material = h.mat;
+    this.hiObjs.length = 0;
+  }
+
+  /** Highlight seluruh mesh milik bagian terpilih (klon material + emissive). */
+  private applyHighlight() {
+    const part = this.selectedPart;
+    if (!part) return;
+    for (const root of this.pickables) {
+      if (root.userData.pick !== part) continue;
+      root.traverse((c) => {
+        const mesh = c as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.material) return;
+        const orig = mesh.material as THREE.Material;
+        let hi = this.hiMats.get(orig);
+        if (!hi) {
+          hi = orig.clone();
+          const std = hi as THREE.MeshStandardMaterial;
+          if (std.isMeshStandardMaterial) {
+            std.emissive = new THREE.Color(0xd97a2b);
+            std.emissiveIntensity = 0.45;
+          }
+          hi.clippingPlanes = [this.clipPlane];
+          (hi as THREE.MeshStandardMaterial).wireframe = (orig as THREE.MeshStandardMaterial).wireframe;
+          this.hiMats.set(orig, hi);
+        }
+        this.hiObjs.push({ obj: mesh, mat: orig });
+        mesh.material = hi;
+      });
+    }
+  }
+
+  /** Raycast dari koordinat layar; id bagian via walk-up ke objek/grup bertag. */
+  private raycastPart(cx: number, cy: number): string | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    const ndc = new THREE.Vector2(
+      ((cx - rect.left) / rect.width) * 2 - 1,
+      -((cy - rect.top) / rect.height) * 2 + 1,
+    );
+    const cam: THREE.Camera = this.useOrtho ? this.cameraOrtho : this.camera;
+    this.raycaster.setFromCamera(ndc, cam);
+    const hits = this.raycaster.intersectObjects(this.pickables, true);
+    for (const h of hits) {
+      let o: THREE.Object3D | null = h.object;
+      while (o) {
+        if (o.userData?.pick) return o.userData.pick as string;
+        o = o.parent;
+      }
+    }
+    return null;
+  }
+
+  /** Klik kanvas: pilih bagian & umpankan id-nya ke React. */
+  private pickAt(cx: number, cy: number) {
+    const part = this.raycastPart(cx, cy);
+    if (part !== this.selectedPart) this.setSelection(part);
+    this.pickHandlers.onPick?.(part);
+  }
+
+  /** Hover tanpa tekan: tooltip nama bagian + kursor pointer (dithrottle 70 ms). */
+  private hoverAt(e: PointerEvent) {
+    const now = performance.now();
+    if (now - this.hoverThrottle < 70) return;
+    this.hoverThrottle = now;
+    const part = this.raycastPart(e.clientX, e.clientY);
+    this.canvas.style.cursor = part ? "pointer" : "";
+    if (part !== this.lastHover) {
+      this.lastHover = part;
+      const rect = this.canvas.getBoundingClientRect();
+      this.pickHandlers.onHover?.(part, e.clientX - rect.left, e.clientY - rect.top);
+    }
+  }
+
+  private onLeave = () => {
+    this.lastHover = null;
+    this.pickHandlers.onHover?.(null, 0, 0);
+    this.canvas.style.cursor = "";
+  };
+
+  /** Tandai objek (mesh / grup) sebagai bagian yang bisa diklik (raycast). */
+  private tag(obj: THREE.Object3D, part: string) {
+    obj.userData.pick = part;
+    this.pickables.push(obj);
+    return obj;
   }
 
   private camPos(): THREE.Vector3 {
@@ -409,6 +568,12 @@ export class HouseScene {
     this.clearGroup(this.trussGroup);
     this.clearGroup(this.labelGroup);
     this.clearGroup(this.mepGroup);
+    this.roofGroup.add(this.lisplankGroup);
+    this.clearGroup(this.lisplankGroup);
+    // mesh dibangun ulang: daftar objek yang bisa diklik & highlight di-reset,
+    // lalu dipasang ulang pada akhir update()
+    this.pickables.length = 0;
+    this.hiObjs.length = 0;
 
     // potongan
     this.clipPlane.constant = view.cutH;
@@ -435,26 +600,32 @@ export class HouseScene {
     // ----- tahapan konstruksi: 0 = kendali bebas, 1..8 = kondisi pembangunan
     const s = Math.max(0, Math.round(view.stage || 0));
     const manual = s === 0;
+    // bagian yang disembunyikan per-bagian oleh pengguna (panel detail bagian).
+    // Hanya berlaku di mode bebas — mode tahapan mengunci visibilitas sesuai progres.
+    const hiddenList = manual ? view.hidden ?? [] : [];
+    const hid = (p: string) => hiddenList.includes(p);
     const V: StageVis = {
-      pondasi: manual ? true : s >= 1,
-      sloof: manual ? view.showStruktur : s >= 2,
-      kolom: manual ? view.showStruktur : s >= 2,
-      dinding: manual ? view.showDinding : s >= 3,
-      pelana: manual ? view.showDinding : s >= 4,
-      ringbalk: manual ? view.showStruktur : s >= 4,
-      kusen: manual ? view.showDinding || view.showStruktur : s >= 3,
-      lantai: manual ? true : s >= 8,
-      rangka: manual ? view.showRangka : s >= 5,
-      genteng: manual ? view.showRoof : s >= 6,
-      plafon: manual ? view.showRoof || view.showRangka : s >= 6,
-      plester: manual ? view.showFinishing : s >= 7,
-      cat: manual ? view.showFinishing : s >= 8,
+      pondasi: (manual ? true : s >= 1) && !hid("pondasi"),
+      sloof: (manual ? view.showStruktur : s >= 2) && !hid("sloof"),
+      kolom: (manual ? view.showStruktur : s >= 2) && !hid("kolom"),
+      dinding: (manual ? view.showDinding : s >= 3) && !hid("dinding"),
+      pelana: (manual ? view.showDinding : s >= 4) && !hid("dinding"),
+      ringbalk: (manual ? view.showStruktur : s >= 4) && !hid("ringbalk"),
+      kusen: (manual ? view.showDinding || view.showStruktur : s >= 3) && !hid("kusen"),
+      lantai: (manual ? true : s >= 8) && !hid("lantai"),
+      rangka: (manual ? view.showRangka : s >= 5) && !hid("rangka"),
+      genteng: (manual ? view.showRoof : s >= 6) && !hid("genteng"),
+      plafon: (manual ? view.showRoof || view.showRangka : s >= 6) && !hid("plafon"),
+      plester: (manual ? view.showFinishing : s >= 7) && !hid("plester"),
+      cat: (manual ? view.showFinishing : s >= 8) && !hid("cat"),
     };
 
-    // lantai interior (rabat + keramik) di Y=0
+    // lantai interior: rabat beton 10 cm + KERAMIK KEPING DEMI KEPING per ruangan
+    // (grid mengikuti ukuran pilihan 30/40 cm, nat ±3 mm; ruang basah anti-slip)
     if (V.lantai) {
       const lantaiW = 6 - 2 * tL;
-      this.addBox(this.houseRoot, 3, -0.05, 3, lantaiW, 0.1, lantaiW, this.matLantai, true);
+      this.addBox(this.houseRoot, 3, -0.05, 3, lantaiW, 0.1, lantaiW, this.matRabat, true, "lantai");
+      this.buildKeramik(model);
     }
 
     // pondasi cakar ayam (pelat + buis, sekali untuk seluruh denah)
@@ -464,7 +635,7 @@ export class HouseScene {
 
     // dinding: pondasi batu kali + sloof + bata (instancing per dinding) + ring balk + kusen
     for (const w of model.walls) {
-      this.buildWall(w, model, V, cakar);
+      this.buildWall(w, model, V, cakar, hid);
     }
 
     // kolom praktis 15/15 di tiap simpul dinding
@@ -476,7 +647,7 @@ export class HouseScene {
     }
 
     // atap + plafon
-    this.buildRoof(model, V);
+    this.buildRoof(model, V, hid);
 
     // ----- instalasi air & listrik (overlay sinar-X).
     // Mode bebas: mengikuti flag Outliner/viewport. Mode tahapan: jalur rough-in
@@ -484,7 +655,7 @@ export class HouseScene {
     // jalur tertanam) — urutan praktik: instalasi ditarik paralel dengan pekerjaan atap.
     const mepAirOn = manual ? view.showAir : s === 5 || s === 6;
     const mepListrikOn = manual ? view.showListrik : s === 5 || s === 6;
-    this.buildMep(model, mepAirOn, mepListrikOn);
+    this.buildMep(model, mepAirOn, mepListrikOn, hid);
 
     // label ruangan
     if (view.showLabels) {
@@ -510,13 +681,22 @@ export class HouseScene {
       : V.rangka || V.genteng || V.plafon;
     this.tilesGroup.visible = V.genteng;
     this.trussGroup.visible = V.rangka;
+    this.lisplankGroup.visible = V.rangka && !hid("lisplank");
     this.kolomGroup.visible = V.kolom;
+
+    // grup persisten di-tag sebagai bagian (raycast klik & highlight seleksi)
+    this.tag(this.trussGroup, "rangka");
+    this.tag(this.tilesGroup, "genteng");
+    this.tag(this.kolomGroup, "kolom");
 
     // anotasi dimensi 3D mengikuti model terakhir
     this.rebuildDims();
+
+    // pasang ulang highlight bagian terpilih pada mesh yang baru dibangun
+    this.applyHighlight();
   }
 
-  private buildWall(w: WallRT, model: HouseModel, V: StageVis, cakar: boolean) {
+  private buildWall(w: WallRT, model: HouseModel, V: StageVis, cakar: boolean, hid: (p: string) => boolean) {
     const group = new THREE.Group();
     group.userData.explodeDir = w.explodeDir;
     this.houseRoot.add(group);
@@ -537,20 +717,20 @@ export class HouseScene {
         const segH = PONDASI_D * (0.82 + rng() * 0.18);
         const cy = PONDASI_TOP - segH / 2 + (rng() - 0.5) * 0.03;
         if (w.axis === "h") {
-          this.addBox(group, a + segLen / 2, cy, w.c + (rng() - 0.5) * 0.02, segLen, segH, segW, this.matPlinth);
+          this.addBox(group, a + segLen / 2, cy, w.c + (rng() - 0.5) * 0.02, segLen, segH, segW, this.matPlinth, true, "pondasi");
         } else {
-          this.addBox(group, w.c + (rng() - 0.5) * 0.02, cy, a + segLen / 2, segW, segH, segLen, this.matPlinth);
+          this.addBox(group, w.c + (rng() - 0.5) * 0.02, cy, a + segLen / 2, segW, segH, segLen, this.matPlinth, true, "pondasi");
         }
         a += segLen;
       }
     }
     if (V.sloof) {
-      if (w.axis === "h") this.addBox(group, mid, PONDASI_TOP + RB_H / 2, w.c, len, RB_H, bw, this.matBeton);
-      else this.addBox(group, w.c, PONDASI_TOP + RB_H / 2, mid, bw, RB_H, len, this.matBeton);
+      if (w.axis === "h") this.addBox(group, mid, PONDASI_TOP + RB_H / 2, w.c, len, RB_H, bw, this.matBeton, true, "sloof");
+      else this.addBox(group, w.c, PONDASI_TOP + RB_H / 2, mid, bw, RB_H, len, this.matBeton, true, "sloof");
     }
     if (V.ringbalk) {
-      if (w.axis === "h") this.addBox(group, mid, w.h + RB_H / 2, w.c, len, RB_H, bw, this.matBeton);
-      else this.addBox(group, w.c, w.h + RB_H / 2, mid, bw, RB_H, len, this.matBeton);
+      if (w.axis === "h") this.addBox(group, mid, w.h + RB_H / 2, w.c, len, RB_H, bw, this.matBeton, true, "ringbalk");
+      else this.addBox(group, w.c, w.h + RB_H / 2, mid, bw, RB_H, len, this.matBeton, true, "ringbalk");
     }
 
     // mortar/nat slab: kotak-kotak menghindari bukaan (hanya sampai tinggi dinding datar)
@@ -571,8 +751,8 @@ export class HouseScene {
     if (V.dinding && !V.plester) {
       for (const s of segs) {
         if (s.hi - s.lo < 0.01 || s.z1 - s.z0 < 0.01) continue;
-        if (w.axis === "h") this.addBox(group, (s.lo + s.hi) / 2, (s.z0 + s.z1) / 2, w.c, s.hi - s.lo, s.z1 - s.z0, t, this.matMortar);
-        else this.addBox(group, w.c, (s.z0 + s.z1) / 2, (s.lo + s.hi) / 2, t, s.z1 - s.z0, s.hi - s.lo, this.matMortar);
+        if (w.axis === "h") this.addBox(group, (s.lo + s.hi) / 2, (s.z0 + s.z1) / 2, w.c, s.hi - s.lo, s.z1 - s.z0, t, this.matMortar, true, "dinding");
+        else this.addBox(group, w.c, (s.z0 + s.z1) / 2, (s.lo + s.hi) / 2, t, s.z1 - s.z0, s.hi - s.lo, this.matMortar, true, "dinding");
       }
     }
 
@@ -589,6 +769,7 @@ export class HouseScene {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.position.set(0, 0, w.c - t / 2);
+      this.tag(mesh, "dinding");
       group.add(mesh);
       this.dyn.push(geo);
     }
@@ -603,6 +784,7 @@ export class HouseScene {
       const im = new THREE.InstancedMesh(geo, this.matBrick, bricks.length);
       im.castShadow = true;
       im.receiveShadow = true;
+      this.tag(im, "dinding");
       const m4 = new THREE.Matrix4();
       const q = new THREE.Quaternion();
       const col = new THREE.Color();
@@ -634,9 +816,9 @@ export class HouseScene {
         for (const s of segs) {
           if (s.hi - s.lo < 0.01 || s.z1 - s.z0 < 0.01) continue;
           if (w.axis === "h")
-            this.addBox(group, (s.lo + s.hi) / 2, (s.z0 + s.z1) / 2, w.c + side * (t / 2 + pp / 2), s.hi - s.lo, s.z1 - s.z0, pp, mat);
+            this.addBox(group, (s.lo + s.hi) / 2, (s.z0 + s.z1) / 2, w.c + side * (t / 2 + pp / 2), s.hi - s.lo, s.z1 - s.z0, pp, mat, true, "plester");
           else
-            this.addBox(group, w.c + side * (t / 2 + pp / 2), (s.z0 + s.z1) / 2, (s.lo + s.hi) / 2, pp, s.z1 - s.z0, s.hi - s.lo, mat);
+            this.addBox(group, w.c + side * (t / 2 + pp / 2), (s.z0 + s.z1) / 2, (s.lo + s.hi) / 2, pp, s.z1 - s.z0, s.hi - s.lo, mat, true, "plester");
         }
         if (w.gable && V.pelana) {
           const baseZ = w.gable.baseZ;
@@ -650,6 +832,7 @@ export class HouseScene {
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           mesh.position.set(0, 0, w.c + side * w.t / 2 + (side > 0 ? 0 : -pp));
+          this.tag(mesh, "plester");
           group.add(mesh);
           this.dyn.push(geo);
         }
@@ -658,7 +841,10 @@ export class HouseScene {
 
     // kusen berprofil, pintu, jendela & lubang angin
     if (V.kusen) {
-      for (const o of w.openings) this.buildKusen(group, w, o);
+      for (const o of w.openings) {
+        if (hid(o.kind)) continue; // pintu / jendela / roster bisa disembunyikan per jenis
+        this.buildKusen(group, w, o);
+      }
     }
   }
 
@@ -678,10 +864,11 @@ export class HouseScene {
     const hgt = o.top - o.sill;
     const cy = (o.sill + o.top) / 2;
 
-    // helper: kotak pada bidang bukaan (x = sepanjang dinding, y = elevasi)
+    // helper: kotak pada bidang bukaan (x = sepanjang dinding, y = elevasi);
+    // tiap mesh kusen di-tag sebagai bagian sesuai jenis bukaannya (pintu/jendela/vent)
     const put = (x: number, y: number, sx: number, sy: number, sz: number, mat: THREE.Material, receive = true) => {
-      if (w.axis === "h") this.addBox(group, x, y, w.c, sx, sy, sz, mat, receive);
-      else this.addBox(group, w.c, y, x, sz, sy, sx, mat, receive);
+      if (w.axis === "h") this.addBox(group, x, y, w.c, sx, sy, sz, mat, receive, o.kind);
+      else this.addBox(group, w.c, y, x, sz, sy, sx, mat, receive, o.kind);
     };
 
     if (o.kind === "vent") {
@@ -736,10 +923,67 @@ export class HouseScene {
     }
   }
 
+  /**
+   * Lantai keramik: grid keping per ruangan dari model (ukuran 30/40 cm sesuai
+   * pilihan). Keping penuh dipasang dari satu sisi, sisa tepi menjadi keping
+   * potong. Nat praktik ±3 mm, digambar 8 mm agar grid terbaca di layar
+   * (warna nat = rabat gelap di bawah keping). Ruang basah (KM/WC) memakai
+   * keramik abu bertekstur (anti-slip).
+   */
+  private buildKeramik(model: HouseModel) {
+    const f = model.floor;
+    // Nat digambar 8 mm (praktik ±3 mm) agar garis sambung keping terbaca di
+    // layar — warna nat = rabat gelap di bawah keping.
+    const nat = 0.008; // lebar nat visual (m)
+    const tileT = 0.008; // tebal keping keramik (m)
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    this.dyn.push(geo);
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const col = new THREE.Color();
+    for (const room of f.rooms) {
+      const w = room.x1 - room.x0;
+      const d = room.z1 - room.z0;
+      if (w <= 0.06 || d <= 0.06) continue; // ruang terlalu sempit untuk grid
+      const count = room.nx * room.nz;
+      const im = new THREE.InstancedMesh(geo, room.basah ? this.matKeramikBasah : this.matKeramik, count);
+      // lantai tidak menerima bayangan dinding agar pola grid keramik terbaca
+      // jelas dari atas (model pembelajaran, bukan render mood)
+      im.castShadow = false;
+      im.receiveShadow = false;
+      this.tag(im, "lantai");
+      const base = new THREE.Color(room.basah ? 0x8e939a : 0xd8d2c4);
+      let idx = 0;
+      for (let i = 0; i < room.nx; i++) {
+        const cw = Math.min(f.tileM, w - i * f.tileM); // keping terakhir = potongan tepi
+        if (cw <= 0.012) continue;
+        const cx = room.x0 + i * f.tileM + cw / 2;
+        for (let j = 0; j < room.nz; j++) {
+          const cd = Math.min(f.tileM, d - j * f.tileM);
+          if (cd <= 0.012) continue;
+          const cz = room.z0 + j * f.tileM + cd / 2;
+          m4.compose(
+            new THREE.Vector3(cx, tileT / 2, cz),
+            q,
+            new THREE.Vector3(Math.max(cw - nat, 0.015), tileT, Math.max(cd - nat, 0.015)),
+          );
+          im.setMatrixAt(idx, m4);
+          // variasi tint keping demi keping (deterministik) agar pola grid terbaca
+          const r = mulberry32(idx * 104729 + Math.round(room.x0 * 577))();
+          col.copy(base).offsetHSL(0, 0, (r - 0.5) * 0.09);
+          im.setColorAt(idx, col);
+          idx++;
+        }
+      }
+      im.count = idx; // hanya keping nyata yang terpasang
+      this.houseRoot.add(im);
+    }
+  }
+
   /** Pondasi cakar ayam (sistem Sedyatmo): pelat beton 6x6 m + buis beton vertikal. */
   private buildCakarAyam(c: CakarAyamRT) {
     // pelat bertulang: puncak pelat tepat di bawah sloof (-0,2 m), buram agar solid terbaca
-    this.addBox(this.houseRoot, 3, PONDASI_TOP - CAKAR.slabT / 2, 3, 6, CAKAR.slabT, 6, this.matBeton, true);
+    this.addBox(this.houseRoot, 3, PONDASI_TOP - CAKAR.slabT / 2, 3, 6, CAKAR.slabT, 6, this.matBeton, true, "pondasi");
     // buis beton menancap ke tanah di tiap titik kolom + grid tengah;
     // ujung atas buis dibuat rata muka pelat agar pola grid cakar terbaca dari atas
     const L = CAKAR.buisL + CAKAR.slabT;
@@ -748,6 +992,7 @@ export class HouseScene {
       const m = new THREE.Mesh(geo, this.matBuis);
       m.position.set(p.x, PONDASI_TOP + 0.02 - L / 2, p.y); // ujung atas sedikit menonjol 2 cm di muka pelat
       m.receiveShadow = true;
+      this.tag(m, "pondasi");
       this.houseRoot.add(m);
       this.dyn.push(geo);
     }
@@ -759,7 +1004,7 @@ export class HouseScene {
    * dinding ujung pelana adalah dinding depan (z = 6) dan belakang (z = 0).
    * Tahapan: rangka atap (kuda-kuda + web + reng + lisplank) -> genteng + nok.
    */
-  private buildRoof(model: HouseModel, V: StageVis) {
+  private buildRoof(model: HouseModel, V: StageVis, hid: (p: string) => boolean) {
     const tinggi = model.config.tinggi;
     const apex = model.roof.apexAdd;
     const pitch = model.roof.pitch; // tan(kemiringan)
@@ -775,7 +1020,7 @@ export class HouseScene {
     // plafon mengikuti area bersih
     if (V.plafon) {
       const cw = 6 - 2 * (model.config.tLuar / 1000);
-      this.addBox(this.roofGroup, 3, tinggi + 0.02, 3, cw, 0.03, cw, this.matPlafon);
+      this.addBox(this.roofGroup, 3, tinggi + 0.02, 3, cw, 0.03, cw, this.matPlafon, true, "plafon");
     }
 
     // ---------- rangka baja ringan (kuda-kuda + web pengaku + reng + lisplank) ----------
@@ -829,17 +1074,20 @@ export class HouseScene {
       }
 
       // lisplank pada kedua ujung eaves (terpasang di rangka sebelum genteng)
-      for (const s of [-1, 1]) {
-        const x = 3 + s * (3 + ov) - s * 0.02;
-        this.addBox(this.trussGroup, x, planeY(3 + ov) - 0.1, 3, 0.035, 0.2, zLen, this.matLisplank);
-      }
+      // (grup terpisah agar bisa disembunyikan / dipilih sebagai bagian sendiri)
+      if (!hid("lisplank")) {
+        for (const s of [-1, 1]) {
+          const x = 3 + s * (3 + ov) - s * 0.02;
+          this.addBox(this.lisplankGroup, x, planeY(3 + ov) - 0.1, 3, 0.035, 0.2, zLen, this.matLisplank, true, "lisplank");
+        }
 
-      // lisplank ujung pelana (menutup overstek pada kedua ujung segitiga atap)
-      const slopeLen = Math.hypot(3 + ov, apex + ov * pitch);
-      const yMidSlope = (yRidge + rBase - ov * pitch) / 2;
-      for (const s of [-1, 1]) {
-        for (const zz of [-ov + 0.017, 6 + ov - 0.017]) {
-          this.addTiltedBox(this.trussGroup, 3 + s * (3 + ov) / 2, yMidSlope, zz, slopeLen, 0.2, 0.034, s > 0 ? -ang : ang, this.matLisplank);
+        // lisplank ujung pelana (menutup overstek pada kedua ujung segitiga atap)
+        const slopeLen = Math.hypot(3 + ov, apex + ov * pitch);
+        const yMidSlope = (yRidge + rBase - ov * pitch) / 2;
+        for (const s of [-1, 1]) {
+          for (const zz of [-ov + 0.017, 6 + ov - 0.017]) {
+            this.addTiltedBox(this.lisplankGroup, 3 + s * (3 + ov) / 2, yMidSlope, zz, slopeLen, 0.2, 0.034, s > 0 ? -ang : ang, this.matLisplank, "lisplank");
+          }
         }
       }
     }
@@ -906,7 +1154,7 @@ export class HouseScene {
    *   panel MCB, meteran air, kran, shower, kloset, floor drain
    * - septic tank + sumur resapan di belakang rumah (bawah tanah, tembus pandang)
    */
-  private buildMep(model: HouseModel, air: boolean, listrik: boolean) {
+  private buildMep(model: HouseModel, air: boolean, listrik: boolean, hid: (p: string) => boolean) {
     if (!air && !listrik) return;
     const m = model.mep;
 
@@ -916,13 +1164,25 @@ export class HouseScene {
     const R_CONDUIT = 0.015;
 
     // sambungan siku diberi bola agar pertemuan pipa rapat (bukan celah flat-cap)
-    const joint = (p: { x: number; y: number; z: number }, r: number, mat: THREE.Material) =>
-      this.addMepSphere(p.x, p.y, p.z, r, mat);
+    const joint = (p: { x: number; y: number; z: number }, r: number, mat: THREE.Material, pick?: string) =>
+      this.addMepSphere(p.x, p.y, p.z, r, mat, pick);
+
+    // id bagian (parts.ts) untuk tiap jalur — dipakai untuk tag klik & visibilitas
+    const routePart = (r: { jenis: string; sirkuit: "lampu" | "kontak" | null }) =>
+      r.jenis === "air_bersih"
+        ? "pipaAirBersih"
+        : r.jenis === "air_kotor"
+          ? "pipaAirKotor"
+          : r.sirkuit === "kontak"
+            ? "listrikKontak"
+            : "listrikLampu";
 
     for (const r of m.routes) {
       const isAir = r.jenis !== "listrik";
       if (isAir && !air) continue;
       if (!isAir && !listrik) continue;
+      const part = routePart(r);
+      if (hid(part)) continue;
       const mat =
         r.jenis === "air_bersih"
           ? this.matPipeBersih
@@ -933,9 +1193,9 @@ export class HouseScene {
               : this.matKabelLampu;
       const rad = r.jenis === "air_bersih" ? R_BERSIH : r.jenis === "air_kotor" ? R_KOTOR : R_CONDUIT;
       for (let i = 1; i < r.pts.length; i++) {
-        this.addPipe(r.pts[i - 1], r.pts[i], rad, mat);
+        this.addPipe(r.pts[i - 1], r.pts[i], rad, mat, part);
       }
-      for (let i = 1; i < r.pts.length - 1; i++) joint(r.pts[i], rad, mat);
+      for (let i = 1; i < r.pts.length - 1; i++) joint(r.pts[i], rad, mat, part);
     }
 
     // orientasi piring saklar/stop kontak: tipis mengikuti dinding terdekat
@@ -956,62 +1216,64 @@ export class HouseScene {
       const isAirPt = p.kind === "meter_air" || p.kind === "kran" || p.kind === "shower" || p.kind === "kloset" || p.kind === "drain";
       if (isAirPt && !air) continue;
       if (!isAirPt && !listrik) continue;
+      if (hid(MEP_POINT_PART[p.kind] ?? p.kind)) continue; // titik bisa disembunyikan per bagian
       switch (p.kind) {
         case "lampu":
-          this.addMepSphere(p.x, p.y, p.z, 0.06, this.matMepLampu);
+          this.addMepSphere(p.x, p.y, p.z, 0.06, this.matMepLampu, "titikLampu");
           break;
         case "saklar":
-          if (thinZ(p)) this.addMepBox(p.x, p.y, p.z, 0.09, 0.12, 0.028, this.matMepPlate);
-          else this.addMepBox(p.x, p.y, p.z, 0.028, 0.12, 0.09, this.matMepPlate);
+          if (thinZ(p)) this.addMepBox(p.x, p.y, p.z, 0.09, 0.12, 0.028, this.matMepPlate, "saklar");
+          else this.addMepBox(p.x, p.y, p.z, 0.028, 0.12, 0.09, this.matMepPlate, "saklar");
           break;
         case "stopkontak":
-          if (thinZ(p)) this.addMepBox(p.x, p.y, p.z, 0.09, 0.09, 0.028, this.matMepPlate);
-          else this.addMepBox(p.x, p.y, p.z, 0.028, 0.09, 0.09, this.matMepPlate);
+          if (thinZ(p)) this.addMepBox(p.x, p.y, p.z, 0.09, 0.09, 0.028, this.matMepPlate, "stopkontak");
+          else this.addMepBox(p.x, p.y, p.z, 0.028, 0.09, 0.09, this.matMepPlate, "stopkontak");
           break;
         case "panel": {
-          this.addMepBox(p.x, p.y, p.z, 0.26, 0.34, 0.09, this.matMepPanel);
+          this.addMepBox(p.x, p.y, p.z, 0.26, 0.34, 0.09, this.matMepPanel, "panelMcb");
           const l = this.makeMepLabel("Panel MCB + meteran", "#f2c14e");
           l.position.set(p.x, p.y + 0.3, p.z);
           this.mepGroup.add(l);
           break;
         }
         case "meter_air": {
-          this.addMepBox(p.x, p.y, p.z, 0.18, 0.18, 0.1, this.matMepAir);
+          this.addMepBox(p.x, p.y, p.z, 0.18, 0.18, 0.1, this.matMepAir, "meterAir");
           const l = this.makeMepLabel("Meter air + stop kran", "#4c9ee8");
           l.position.set(p.x, 0.35, p.z);
           this.mepGroup.add(l);
           break;
         }
         case "kran":
-          this.addMepBox(p.x, p.y, p.z, 0.05, 0.16, 0.05, this.matMepAir);
+          this.addMepBox(p.x, p.y, p.z, 0.05, 0.16, 0.05, this.matMepAir, "kran");
           break;
         case "shower": {
           // lengan shower mendatar + muka pancuran di ketinggian 2,05 m
-          this.addMepBox(p.x, p.y, p.z, 0.22, 0.045, 0.045, this.matMepAir);
+          this.addMepBox(p.x, p.y, p.z, 0.22, 0.045, 0.045, this.matMepAir, "shower");
           const g = new THREE.CylinderGeometry(0.07, 0.07, 0.02, 16);
           const head = new THREE.Mesh(g, this.matMepAir);
           head.position.set(p.x, p.y - 0.03, p.z);
           head.renderOrder = 830;
+          this.tag(head, "shower");
           this.mepGroup.add(head);
           this.dyn.push(g);
           break;
         }
         case "kloset": {
           // kloset duduk sederhana: mangkuk + tangki menghadap dinding belakang
-          this.addMepBox(p.x, 0.19, p.z + 0.08, 0.36, 0.38, 0.5, this.matMepKloset);
-          this.addMepBox(p.x, 0.25, p.z - 0.2, 0.36, 0.5, 0.16, this.matMepKloset);
+          this.addMepBox(p.x, 0.19, p.z + 0.08, 0.36, 0.38, 0.5, this.matMepKloset, "kloset");
+          this.addMepBox(p.x, 0.25, p.z - 0.2, 0.36, 0.5, 0.16, this.matMepKloset, "kloset");
           break;
         }
         case "drain":
-          this.addMepCyl(p.x, p.y, p.z, 0.05, 0.014, this.matMepDrain);
+          this.addMepCyl(p.x, p.y, p.z, 0.05, 0.014, this.matMepDrain, "drain");
           break;
       }
     }
 
-    if (air) {
+    if (air && !hid("septic")) {
       // septic tank (kotak beton 1,2 x 1,6 m) + sumur resapan (Ø1,1 m) di belakang
       const s = m.septic;
-      this.addMepBox(s.x, -0.8, s.z, 1.2, 0.9, 1.6, this.matSeptic);
+      this.addMepBox(s.x, -0.8, s.z, 1.2, 0.9, 1.6, this.matSeptic, "septic");
       const ls = this.makeMepLabel("Septic tank", "#4f9d8d");
       ls.position.set(s.x, 0.1, s.z);
       this.mepGroup.add(ls);
@@ -1020,6 +1282,7 @@ export class HouseScene {
       const rp = new THREE.Mesh(g, this.matResapan);
       rp.position.set(r.x, -0.75, r.z);
       rp.renderOrder = 830;
+      this.tag(rp, "septic");
       this.mepGroup.add(rp);
       this.dyn.push(g);
       const lr = this.makeMepLabel("Sumur resapan", "#8a7f6a");
@@ -1029,7 +1292,7 @@ export class HouseScene {
   }
 
   /** Segmen pipa silinder antara dua titik jalur (overlay sinar-X). */
-  private addPipe(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, radius: number, mat: THREE.Material) {
+  private addPipe(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, radius: number, mat: THREE.Material, pick?: string) {
     const va = new THREE.Vector3(a.x, a.y, a.z);
     const vb = new THREE.Vector3(b.x, b.y, b.z);
     const dir = new THREE.Vector3().subVectors(vb, va);
@@ -1040,35 +1303,39 @@ export class HouseScene {
     mesh.position.copy(va).lerp(vb, 0.5);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
     mesh.renderOrder = 820;
+    if (pick) this.tag(mesh, pick);
     this.mepGroup.add(mesh);
     this.dyn.push(geo);
   }
 
-  private addMepBox(x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material) {
+  private addMepBox(x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material, pick?: string) {
     const g = new THREE.BoxGeometry(sx, sy, sz);
     const mesh = new THREE.Mesh(g, mat);
     mesh.position.set(x, y, z);
     mesh.renderOrder = 830;
+    if (pick) this.tag(mesh, pick);
     this.mepGroup.add(mesh);
     this.dyn.push(g);
     return mesh;
   }
 
-  private addMepSphere(x: number, y: number, z: number, r: number, mat: THREE.Material) {
+  private addMepSphere(x: number, y: number, z: number, r: number, mat: THREE.Material, pick?: string) {
     const g = new THREE.SphereGeometry(r, 14, 10);
     const mesh = new THREE.Mesh(g, mat);
     mesh.position.set(x, y, z);
     mesh.renderOrder = 830;
+    if (pick) this.tag(mesh, pick);
     this.mepGroup.add(mesh);
     this.dyn.push(g);
     return mesh;
   }
 
-  private addMepCyl(x: number, y: number, z: number, r: number, h: number, mat: THREE.Material) {
+  private addMepCyl(x: number, y: number, z: number, r: number, h: number, mat: THREE.Material, pick?: string) {
     const g = new THREE.CylinderGeometry(r, r, h, 16);
     const mesh = new THREE.Mesh(g, mat);
     mesh.position.set(x, y, z);
     mesh.renderOrder = 830;
+    if (pick) this.tag(mesh, pick);
     this.mepGroup.add(mesh);
     this.dyn.push(g);
     return mesh;
@@ -1197,25 +1464,27 @@ export class HouseScene {
 
   // --------------------------------------------------------------- util --
 
-  private addBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material, receive = true) {
+  private addBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material, receive = true, pick?: string) {
     const g = new THREE.BoxGeometry(sx, sy, sz);
     const m = new THREE.Mesh(g, mat);
     m.position.set(x, y, z);
     m.castShadow = true;
     m.receiveShadow = receive;
+    if (pick) this.tag(m, pick);
     parent.add(m);
     this.dyn.push(g);
     return m;
   }
 
   /** Kotak miring di sumbu Z: rotasi positif menaikkan ujung +X, negatif menurunkan. */
-  private addTiltedBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotZ: number, mat: THREE.Material) {
+  private addTiltedBox(parent: THREE.Object3D, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotZ: number, mat: THREE.Material, pick?: string) {
     const g = new THREE.BoxGeometry(sx, sy, sz);
     const m = new THREE.Mesh(g, mat);
     m.position.set(x, y, z);
     m.rotation.z = rotZ;
     m.castShadow = true;
     m.receiveShadow = true;
+    if (pick) this.tag(m, pick);
     parent.add(m);
     this.dyn.push(g);
     return m;
@@ -1273,12 +1542,15 @@ export class HouseScene {
     this.canvas.removeEventListener("pointerup", this.onUp);
     this.canvas.removeEventListener("pointercancel", this.onUp);
     this.canvas.removeEventListener("wheel", this.onWheel);
+    this.canvas.removeEventListener("pointerleave", this.onLeave);
     for (const d of this.disposables) d.dispose();
     for (const d of this.dyn) d.dispose();
     for (const d of this.dimsDyn) d.dispose();
+    for (const m of this.hiMats.values()) m.dispose();
     for (const m of [
       this.matBrick, this.matMortar, this.matKusen, this.matPintu, this.matKaca,
-      this.matPlinth, this.matBeton, this.matBuis, this.matLantai, this.matAtap, this.matBaja,
+      this.matPlinth, this.matBeton, this.matBuis, this.matRabat, this.matKeramik,
+      this.matKeramikBasah, this.matAtap, this.matBaja,
       this.matGenteng, this.matLisplank, this.matPlafon, this.matRidge,
       this.matPlester, this.matCatInt, this.matCatExt, this.matVent,
       this.matVentFrame, this.matPintuGelap, this.matGround, this.matPlot, this.matDim,

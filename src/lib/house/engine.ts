@@ -481,6 +481,7 @@ export interface HouseConfig {
   plesteran: boolean;
   atapDeg: number; // kemiringan atap (derajat dari mendatar)
   overhang: number; // overstek atap (m)
+  keramikCm: 30 | 40; // ukuran keramik lantai (cm)
 }
 
 export const BRICK = {
@@ -527,6 +528,7 @@ export const DEFAULT_CONFIG: HouseConfig = {
   plesteran: false,
   atapDeg: 30,
   overhang: 0.6,
+  keramikCm: 40,
 };
 
 export const DEFAULT_CONFIG_MERAH: HouseConfig = {
@@ -671,6 +673,29 @@ function buildMepRT(spec: MepSpec, tinggi: number): MepRT {
   };
 }
 
+/** Grid keramik satu ruangan (luas bersih, koordinat denah). */
+export interface FloorRoomRT {
+  id: string;
+  name: string;
+  x0: number; // sisi kiri bersih (m)
+  x1: number;
+  z0: number; // sisi belakang bersih (m)
+  z1: number;
+  nx: number; // jumlah keping arah X (termasuk keping potong di tepi)
+  nz: number; // jumlah keping arah Z
+  pcs: number; // total keping ruangan (nx x nz)
+  basah: boolean; // ruang basah -> keramik anti-slip
+}
+
+/** Lantai keramik dari model 3D: grid keping per ruangan mengikuti ukuran pilihan. */
+export interface FloorRT {
+  tileCm: number; // ukuran keramik pilihan (cm)
+  tileM: number; // ukuran keramik (m)
+  rooms: FloorRoomRT[];
+  totalPcs: number; // total keping seluruh rumah
+  areaM2: number; // luas bersih lantai (m2)
+}
+
 export interface HouseModel {
   config: HouseConfig;
   walls: WallRT[];
@@ -702,6 +727,7 @@ export interface HouseModel {
     plasterArea: number;
     wallFootprint: number;
   };
+  floor: FloorRT;
   openings: { doors: number; windows: number; vents: number; windowAreaM2: number };
   vent: { bukaanM2: number; pctLantai: number; okSni: boolean; okIdeal: boolean };
   roof: {
@@ -912,6 +938,28 @@ export function buildModel(config: HouseConfig): HouseModel {
   const netFloor = rooms.reduce((s, r) => s + r.area, 0);
   const gross = 36;
 
+  // ----- lantai keramik: grid keping per ruangan mengikuti ukuran pilihan.
+  // Keping dipasang ukuran penuh dari satu sisi; sisa tepi < ukuran penuh
+  // dipotong (tetap dihitung 1 keping utuh terbeli) — seperti pemasangan nyata.
+  const tileM = config.keramikCm / 100;
+  const floorRooms: FloorRoomRT[] = rooms.map((r) => {
+    const x0 = r.cx - r.w / 2;
+    const x1 = r.cx + r.w / 2;
+    const z0 = r.cy - r.d / 2;
+    const z1 = r.cy + r.d / 2;
+    const nx = Math.max(1, Math.ceil(r.w / tileM - 1e-9));
+    const nz = Math.max(1, Math.ceil(r.d / tileM - 1e-9));
+    const basah = r.id === "km" || /mandi|wc|basah/i.test(r.name);
+    return { id: r.id, name: r.name, x0, x1, z0, z1, nx, nz, pcs: nx * nz, basah };
+  });
+  const floor: FloorRT = {
+    tileCm: config.keramikCm,
+    tileM,
+    rooms: floorRooms,
+    totalPcs: floorRooms.reduce((s, r) => s + r.pcs, 0),
+    areaM2: netFloor,
+  };
+
   // ----- kolom praktis 15/15: pada tiap pertemuan centerline dinding h x v
   const seen = new Set<string>();
   const koloms: KolomRT[] = [];
@@ -1025,6 +1073,7 @@ export function buildModel(config: HouseConfig): HouseModel {
       wallFootprint,
     },
     openings: { doors, windows, vents, windowAreaM2 },
+    floor,
     vent: {
       bukaanM2: windowAreaM2,
       pctLantai: (windowAreaM2 / Math.max(0.01, netFloor)) * 100,
@@ -1096,7 +1145,9 @@ export const DEFAULT_PRICES: PriceBook = {
   talang: 60000,
   plafon: 145000,
   rabat: 220000,
-  keramik: 95000,
+  keramik: 95000, // (compat) harga per m2 — dipakai bila ukuran tak terdaftar
+  keramik30: 85000, // keramik 30x30 cm per m2
+  keramik40: 95000, // keramik 40x40 cm per m2
   pintu: 1200000,
   jendela: 850000,
   // instalasi air & listrik (divisi VIII) — kuantitas dari jalur 3D
@@ -1149,7 +1200,8 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
   const push = (id: string, divisi: string, uraian: string, spek: string, qty: number, unit: string, exact: boolean, priceKey?: string) => {
     const key = priceKey ?? id;
     const harga = prices[key] ?? 0;
-    rows.push({ id, divisi, uraian, spek, qty, unit, harga, subtotal: qty * harga, exact, priceKey: key });
+    // subtotal dibulatkan ke rupiah utuh (menghindari debu floating-point pada qty desimal)
+    rows.push({ id, divisi, uraian, spek, qty, unit, harga, subtotal: Math.round(qty * harga), exact, priceKey: key });
   };
 
   push("bouwplank", "d1", "Pengukuran & bouwplank", "Profil kayu + patok as bangunan", 1, "lot", false);
@@ -1193,7 +1245,18 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
   push("plafon", "d5", "Plafon gypsum + rangka hollow galvalum", "Gypsum 9 mm di atas luas bersih lantai", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
 
   push("rabat", "d6", "Rabat beton lantai kerja", "Tebal 10 cm di atas luas bersih lantai", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
-  push("keramik", "d6", "Keramik lantai + pemasangan", "40x40 cm golongan menengah", Math.ceil(model.areas.netFloor * 10) / 10, "m2", false);
+  const tcm = cfg.keramikCm;
+  const perM2 = 1 / (model.floor.tileM * model.floor.tileM);
+  push(
+    "keramik",
+    "d6",
+    `Keramik lantai ${tcm}x${tcm} + pemasangan`,
+    `${tcm}x${tcm} cm golongan menengah — ${fmtNum(model.floor.totalPcs)} keping dari layout 3D (termasuk potongan tepi; ±${fmtNum(perM2, 1)} keping/m2)`,
+    Math.ceil(model.areas.netFloor * 10) / 10,
+    "m2",
+    true,
+    tcm === 30 ? "keramik30" : "keramik40",
+  );
 
   push("pintu", "d7", "Kusen + daun pintu lengkap", "Kusen kayu berprofil + daun panel 2 susun + kunci handle + angkur", model.openings.doors, "unit", false);
   push("jendela", "d7", "Kusen + kaca jendela", "Kusen aluminium profil + kaca 5 mm + palang tengah + roster vent", model.openings.windows, "unit", false);

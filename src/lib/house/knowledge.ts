@@ -115,7 +115,7 @@ export const TAHAPAN_PEKERJAAN: TahapanPekerjaan[] = [
     nama: "Lantai rabat & keramik",
     durasi: "1-2 minggu",
     detail:
-      "Urugan & pemadatan di bawah lantai, rabat beton 7,5-10 cm dengan anyam besi, screeding level, lalu pemasangan keramik 40x40/60x60. Lantai KM/WC keramik rough/anti slip dengan kemiringan 1-2% ke floor drain.",
+      "Urugan & pemadatan di bawah lantai, rabat beton 7,5-10 cm dengan anyam besi, screeding level, lalu pemasangan keramik 30x30/40x40 (ukuran dapat diganti di panel Properti — grid & jumlah keping dihitung ulang di model 3D). Lantai KM/WC keramik rough/anti slip dengan kemiringan 1-2% ke floor drain.",
     cekMutu: [
       "Rabat dipadatkan, tidak bonjol/turun setelah kering",
       "Keramik tapped tidak kosong (suara beda menandakan bonjol)",
@@ -238,7 +238,7 @@ export const DETAIL_ELEMEN: DetailElemen[] = [
     poin: [
       "Urugan di bawah lantai dipadatkan tiap 20-25 cm, bukan tanah liat expansif.",
       "Rabat beton 7,5-10 cm dengan anyam besi/wiremesh 6-8 mm untuk lantai interior.",
-      "Screeding level sebelum keramik; keramik 40x40 cukup untuk rumah sederhana, 60x60 tampilan lebih luas.",
+      "Screeding level sebelum keramik; 30x30 cocok untuk ruang kecil (KM/dapur), 40x40 membuat ruang terasa lebih luas dengan sambungan lebih sedikit.",
       "Lantai KM/WC: keramik permukaan bertekstur (anti slip) dengan kemiringan 1-2% ke floor drain.",
       "Plinton (skirting) 10 cm melindungi pertemuan dinding-lantai dari kelembapan sapuan air.",
     ],
@@ -349,6 +349,7 @@ export const TIPS_PRAKTIS: string[] = [
   "Cek ulang semua ukuran di lapangan dengan denah aplikasi ini (bouwplank) sebelum galian; kesalahan 10 cm di pondasi sulit diperbaiki.",
   "Pilih pondasi sesuai tanah: batu kali untuk tanah keras (paling ekonomis), cakar ayam bila tanah lunak/berair atau lahan sempit galian.",
   "Gunakan fitur Tahapan Pembangunan di panel 3D untuk memahami urutan kerja sebelum bicara dengan tukang/kontraktor.",
+  "Klik langsung bagian bangunan di viewport 3D — dinding, pondasi, rangka atap, pipa air, titik listrik, dst. — panel detailnya memuat spesifikasi, kuantitas dari model, dan harga satuan yang bisa diedit langsung (total RAB ikut terhitung ulang). Baris Outliner juga bisa diklik untuk memilih bagian yang sama, dan tombol mata menyembunyikan bagian tertentu agar lapisan di belakangnya terlihat.",
 ];
 
 export interface ConstructionStage {

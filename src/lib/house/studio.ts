@@ -10,6 +10,7 @@ export interface StudioView extends ViewState {
   wireframe: boolean; // mode shading wireframe
   dims: boolean; // anotasi dimensi 3D
   ortho: boolean; // proyeksi ortografis
+  hidden: string[]; // id bagian yang disembunyikan per-bagian (lihat parts.ts)
 }
 
 export const DEFAULT_VIEW: StudioView = {
@@ -30,6 +31,7 @@ export const DEFAULT_VIEW: StudioView = {
   wireframe: false,
   dims: false,
   ortho: false,
+  hidden: [],
 };
 
 export const PAINTS: { hex: string; name: string }[] = [

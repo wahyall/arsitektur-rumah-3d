@@ -82,6 +82,22 @@ export function PropertiesPanel({ config, onConfig, onGantiJenis, view, onView, 
               </Select>
             </Field>
 
+            <Field
+              label="Ukuran keramik lantai"
+              hint={`Grid keping di model 3D & jumlah keping RAB ikut berubah — ${fmtNum(model.floor.totalPcs)} keping ${config.keramikCm}x${config.keramikCm} cm (±${fmtNum(1 / (model.floor.tileM * model.floor.tileM), 1)} keping/m2). KM memakai keramik anti-slip.`}
+            >
+              <Select
+                value={String(config.keramikCm)}
+                onValueChange={(v) => onConfig({ keramikCm: Number(v) as HouseConfig["keramikCm"] })}
+              >
+                <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30" className="text-xs">30 x 30 cm — garis sambung rapat</SelectItem>
+                  <SelectItem value="40" className="text-xs">40 x 40 cm — ruang terasa lebih luas</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+
             <div className="grid grid-cols-2 gap-2">
               <Field label="Tebal dinding luar">
                 <Select value={String(config.tLuar)} onValueChange={(v) => onConfig({ tLuar: Number(v) })}>
