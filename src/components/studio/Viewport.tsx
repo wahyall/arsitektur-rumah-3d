@@ -11,6 +11,7 @@ import { PartInfoPanel } from "@/components/studio/PartInfoPanel";
 import { cn } from "@/lib/utils";
 import {
   BrickWall,
+  Boxes,
   Camera,
   Droplets,
   Grid3x3,
@@ -161,6 +162,21 @@ export function Viewport({ model, view, onView, onToggleDock, rab, selected, onS
 
         <div className="mx-1 h-5 w-px bg-border" />
 
+        {/* exploded view: bongkar granular (bata demi bata, pintu demi pintu,
+            besi demi besi) — toggle cepat 0 <-> 1 dengan animasi easing */}
+        <div className="flex items-center gap-0.5" role="group" aria-label="Exploded view">
+          <ToggleBtn
+            active={view.explode > 0.01}
+            onClick={() => onView({ explode: view.explode > 0.01 ? 0 : 1 })}
+            title="Exploded View — bongkar bangunan jadi komponen individual (bata, pintu, besi); hubungan spasial posisi asal dipertahankan"
+          >
+            <Boxes className="h-3.5 w-3.5" aria-hidden />
+            <span className="ml-1 hidden md:inline">Bongkar</span>
+          </ToggleBtn>
+        </div>
+
+        <div className="mx-1 h-5 w-px bg-border" />
+
         <div className="flex items-center gap-0.5" role="group" aria-label="Mode shading">
           <ToggleBtn active={!view.wireframe} onClick={() => onView({ wireframe: false })} title="Shading solid">
             Solid
@@ -278,6 +294,11 @@ export function Viewport({ model, view, onView, onToggleDock, rab, selected, onS
           {stageInfo && (
             <div className="pointer-events-auto rounded-sm border border-primary/40 bg-primary/90 px-2 py-1 text-[11px] font-semibold text-primary-foreground shadow backdrop-blur-sm">
               Tahap {stageInfo.no}: {stageInfo.nama} ({stageInfo.durasi})
+            </div>
+          )}
+          {view.explode > 0.01 && (
+            <div className="pointer-events-auto rounded-sm border border-primary/40 bg-primary/20 px-2 py-1 text-[11px] font-semibold text-primary shadow backdrop-blur-sm">
+              Exploded View {Math.round(view.explode * 100)}% · {fmtNum(model.count.totalPieces)} bata · {model.roof.kudaKuda} kuda-kuda
             </div>
           )}
           <div className="pointer-events-auto hidden rounded-sm border border-white/10 bg-black/35 px-2 py-0.5 text-[10px] text-stone-400 backdrop-blur-sm sm:block">
