@@ -610,7 +610,7 @@ export interface MepPointRT {
   z: number;
 }
 
-/** Instalasi teresolasi: panjang jalur, jumlah titik, posisi 3D (untuk scene & RAB). */
+/** Instalasi teresolusi: panjang jalur, jumlah titik, posisi 3D (untuk scene & RAB). */
 export interface MepRT {
   airBersihM: number; // pipa 1/2" + cabang
   airKotorM: number; // pipa 3" ke septic
