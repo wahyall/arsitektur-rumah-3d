@@ -185,17 +185,38 @@ export function PropertiesPanel({ config, onConfig, onGantiJenis, view, onView, 
           </div>
         ) : (
           <div className="space-y-3.5">
-            <Group title="Mode bongkar (explode)">
+            <Group title="Exploded View (bongkar granular)">
               <SliderField
                 id="explode"
-                label="Bongkar dinding"
+                label="Tingkat bongkar"
                 value={`${Math.round(view.explode * 100)}%`}
                 min={0}
                 max={1}
                 step={0.02}
                 val={view.explode}
                 onChange={(v) => onView({ explode: v })}
+                hint="Mengurai rumah jadi komponen individual — bata demi bata, pintu demi pintu, besi demi besi — tiap komponen melayang sesuai posisi asalnya."
               />
+              <div className="grid grid-cols-4 gap-1.5">
+                {[0, 0.35, 0.7, 1].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => onView({ explode: v })}
+                    className={cn(
+                      "h-7 rounded-sm border text-[11px] font-medium transition-colors",
+                      Math.abs(view.explode - v) < 0.01
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                    )}
+                  >
+                    {v === 0 ? "Rakit" : v === 1 ? "Penuh" : `${Math.round(v * 100)}%`}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                Lapisan memisah menurut urutan konstruksi: pondasi melayang keluar dari tanah, bata mengurai batu demi batu, kusen-pintu-jendela lepas per unit, rangka baja terurai besi demi besi, genteng terkupas per keping dari overstek.
+              </p>
             </Group>
 
             <Group title="Potongan horizontal">

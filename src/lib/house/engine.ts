@@ -429,7 +429,7 @@ export interface WallRT {
   gable?: { apexAt: number; apexAdd: number; halfSpan: number; baseZ: number }; // baseZ = puncak ring balk
   openings: OpeningSpec[];
   outer: boolean;
-  explodeDir: [number, number];
+  outDir: [number, number]; // arah normal dinding menjauhi pusat denah (dipakai exploded view)
 }
 
 export interface BrickInstance {
@@ -781,7 +781,9 @@ export function buildModel(config: HouseConfig): HouseModel {
     }
     const lo = typeof spec.from === "function" ? spec.from({ tL, tD }) : spec.from;
     const hi = typeof spec.to === "function" ? spec.to({ tL, tD }) : spec.to;
-    const explodeDir: [number, number] =
+    // arah normal keluar dinding (menjauhi pusat denah 3,3) — dasar arah
+    // penguraian tiap komponen dinding pada exploded view granular
+    const outDir: [number, number] =
       spec.axis === "h"
         ? spec.edge === 6 || (!spec.outer && (spec.pos ?? 0) < 3)
           ? [0, 1]
@@ -805,7 +807,7 @@ export function buildModel(config: HouseConfig): HouseModel {
         .filter((o): o is OpeningSpec => !!o)
         .filter((o) => o.to > lo && o.from < hi && o.top > 0.2),
       outer: spec.outer,
-      explodeDir,
+      outDir,
     };
   });
 
