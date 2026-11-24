@@ -22,7 +22,7 @@ export const DEFAULT_VIEW: StudioView = {
   showFinishing: false,
   showAir: true, // jalur pipa air bersih & limbah (overlay sinar-X)
   showListrik: true, // jalur listrik conduit + titik lampu/saklar/stop kontak
-  explode: 0,
+  explode: 0, // exploded view granular: 0 = terakit, 1 = terurai penuh per komponen
   cutH: 1000,
   stage: 0,
   paintHex: "#f2ecdf",

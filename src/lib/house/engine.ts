@@ -276,7 +276,7 @@ function jendela(from: number, w: number, label: string, sill = JENDELA_SILL, to
  * mode "pelana": di segitiga dinding pelana untuk ventilasi rongga atap.
  * (sill/top berupa sentinel; diselesaikan resolveVent saat model dibangun)
  */
-function lubangAngin(from: number, label: string, w = 0.4, mode: "atas" | "pelana" = "atas"): OpeningSpec {
+function lubahAngin(from: number, label: string, w = 0.4, mode: "atas" | "pelana" = "atas"): OpeningSpec {
   return { from, to: from + w, sill: mode === "atas" ? -2 : -1, top: -3, kind: "vent", label };
 }
 
@@ -295,9 +295,9 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(3.3, 0.6, "Jendela KM", 1.4, 2.0),
           jendela(4.9, 0.9, "Jendela dapur", 1.0, 2.0),
-          lubangAngin(2.4, "Lubang angin kamar 2"),
-          lubangAngin(4.05, "Lubang angin kamar mandi"),
-          lubangAngin(2.7, "Ventilasi rongga atap (belakang)", 0.6, "pelana"),
+          lubahAngin(2.4, "Lubang angin kamar 2"),
+          lubahAngin(4.05, "Lubang angin kamar mandi"),
+          lubahAngin(2.7, "Ventilasi rongga atap (belakang)", 0.6, "pelana"),
         ],
       },
       {
@@ -306,8 +306,8 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(1.0, 1.0, "Jendela kamar 1"),
           pintu(4.2, "Pintu utama"),
-          lubangAngin(5.55, "Lubang angin ruang keluarga"),
-          lubangAngin(2.7, "Ventilasi rongga atap (depan)", 0.6, "pelana"),
+          lubahAngin(5.55, "Lubang angin ruang keluarga"),
+          lubahAngin(2.7, "Ventilasi rongga atap (depan)", 0.6, "pelana"),
         ],
       },
       {
@@ -316,13 +316,13 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(1.0, 1.0, "Jendela kamar 2"),
           jendela(4.0, 1.0, "Jendela kamar 1"),
-          lubangAngin(5.35, "Lubang angin kamar 1"),
+          lubahAngin(5.35, "Lubang angin kamar 1"),
         ],
       },
       {
         id: "kanan", name: "Dinding sisi kanan", axis: "v", edge: 6,
         from: (t) => t.tL, to: (t) => 6 - t.tL, outer: true,
-        openings: [jendela(3.9, 1.2, "Jendela ruang keluarga"), lubangAngin(0.7, "Lubang angin dapur")],
+        openings: [jendela(3.9, 1.2, "Jendela ruang keluarga"), lubahAngin(0.7, "Lubang angin dapur")],
       },
       {
         id: "w5", name: "Sekat kamar (vertikal)", axis: "v", pos: 3,
@@ -365,8 +365,8 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(1.0, 1.0, "Jendela dapur"),
           jendela(5.1, 0.6, "Jendela KM", 1.4, 2.0),
-          lubangAngin(2.6, "Lubang angin ruang studio"),
-          lubangAngin(2.7, "Ventilasi rongga atap (belakang)", 0.6, "pelana"),
+          lubahAngin(2.6, "Lubang angin ruang studio"),
+          lubahAngin(2.7, "Ventilasi rongga atap (belakang)", 0.6, "pelana"),
         ],
       },
       {
@@ -375,8 +375,8 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           pintu(2.5, "Pintu utama"),
           jendela(4.3, 1.3, "Jendela depan"),
-          lubangAngin(1.3, "Lubang angin ruang studio"),
-          lubangAngin(2.7, "Ventilasi rongga atap (depan)", 0.6, "pelana"),
+          lubahAngin(1.3, "Lubang angin ruang studio"),
+          lubahAngin(2.7, "Ventilasi rongga atap (depan)", 0.6, "pelana"),
         ],
       },
       {
@@ -390,8 +390,8 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
         openings: [
           jendela(0.5, 0.6, "Jendela KM", 1.4, 2.0),
           jendela(2.9, 1.5, "Jendela studio"),
-          lubangAngin(1.6, "Lubang angin kamar mandi"),
-          lubangAngin(5.0, "Lubang angin dapur"),
+          lubahAngin(1.6, "Lubang angin kamar mandi"),
+          lubahAngin(5.0, "Lubah angin dapur"),
         ],
       },
       {
@@ -429,7 +429,7 @@ export interface WallRT {
   gable?: { apexAt: number; apexAdd: number; halfSpan: number; baseZ: number }; // baseZ = puncak ring balk
   openings: OpeningSpec[];
   outer: boolean;
-  explodeDir: [number, number];
+  outDir: [number, number]; // arah normal dinding menjauhi pusat denah (dipakai exploded view)
 }
 
 export interface BrickInstance {
@@ -781,7 +781,9 @@ export function buildModel(config: HouseConfig): HouseModel {
     }
     const lo = typeof spec.from === "function" ? spec.from({ tL, tD }) : spec.from;
     const hi = typeof spec.to === "function" ? spec.to({ tL, tD }) : spec.to;
-    const explodeDir: [number, number] =
+    // arah normal keluar dinding (menjauhi pusat denah 3,3) — dasar arah
+    // penguraian tiap komponen dinding pada exploded view granular
+    const outDir: [number, number] =
       spec.axis === "h"
         ? spec.edge === 6 || (!spec.outer && (spec.pos ?? 0) < 3)
           ? [0, 1]
@@ -805,7 +807,7 @@ export function buildModel(config: HouseConfig): HouseModel {
         .filter((o): o is OpeningSpec => !!o)
         .filter((o) => o.to > lo && o.from < hi && o.top > 0.2),
       outer: spec.outer,
-      explodeDir,
+      outDir,
     };
   });
 
@@ -1238,7 +1240,7 @@ export function buildRab(model: HouseModel, prices: PriceBook, upahPct: number):
 
   push("lubangAngin", "d4", "Lubang angin permanen (roster beton + pasang)", "Roster beton 20x20 cm di dinding & dinding pelana; ventilasi tetap terbuka", model.openings.vents, "buah", true, "lubangAngin");
 
-  push("rangkaAtap", "d5", "Rangka atap baja ringan C75 + reng", `${model.roof.kudaKuda} kuda-kuda, jarak antar rangka maks ${KUDA_SPACING} m, borongan pasang`, Math.ceil(model.roof.areaM2), "m2", true);
+  push("rangkaAtap", "d5", "Rangka atap baja ringan C75 + reng", `${model.roof.kudaKuda} kuda-kuda, jarak antar rangka maks ${KUDA_SPACING} m, borongan pasang", Math.ceil(model.roof.areaM2), "m2", true);
   push("genteng", "d5", "Genteng beton flat + pasang", `10 pcs/m2 (${model.roof.gentengPcs} pcs), kemiringan ${cfg.atapDeg} derajat`, Math.ceil(model.roof.areaM2), "m2", true);
   push("lisplank", "d5", "Lisplank", "Papan penutup ujung rangka atap (eaves + kedua ujung pelana)", Math.ceil(model.structure.lisplankM * 10) / 10, "m1", true);
   push("talang", "d5", "Talang air + pipa turun", "PVC di kedua sisi eaves", Math.ceil(model.structure.talangM * 10) / 10, "m1", true);
